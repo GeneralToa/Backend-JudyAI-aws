@@ -1,0 +1,20 @@
+region: "us-west-2"
+identifier: "rag-app"
+tags: 
+  Workspace: "IaC/ses"
+
+role_arn: "arn:aws:iam::580118073904:role/TerraformRole"
+
+ses: 
+  hostedZone: "judy.ai"
+  privateZone: false
+  configurationSet:
+    notifications:
+      name: "notifications-config"
+      sendingEnabled: true
+  templates:
+    welcome:
+      name: "welcomeTemplate"
+      subject: "Welcome aboard {{name}}!"
+      htmlPath: "templates/welcome.html"
+

@@ -1,0 +1,87 @@
+/* Judy.ai Cognito Hosted UI Customization */
+
+.background-customizable {
+    background-color: #0f0f1e !important;
+}
+
+.banner-customizable {
+    background-color: #14142a !important;
+    padding: 32px 28px !important;
+}
+
+.logo-customizable {
+    max-width: 180px !important;
+    max-height: 72px !important;
+    margin-bottom: 8px !important;
+}
+
+.label-customizable {
+    color: #8e8ea8 !important;
+    font-weight: 500 !important;
+    font-size: 0.82rem !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+.inputField-customizable {
+    background-color: #1a1a32 !important;
+    border: 1px solid #2d2d4a !important;
+    border-radius: 10px !important;
+    color: #ebebf5 !important;
+    padding: 12px 16px !important;
+    font-size: 0.9rem !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+.submitButton-customizable {
+    background: linear-gradient(135deg, #4FC3F7 0%, #7C4DFF 40%, #E040FB 70%, #4DD0E1 100%) !important;
+    border: none !important;
+    border-radius: 10px !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    font-size: 0.88rem !important;
+    padding: 13px 24px !important;
+    cursor: pointer !important;
+    text-transform: none !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+.redirect-customizable {
+    color: #4DD0E1 !important;
+    font-size: 0.82rem !important;
+    text-decoration: none !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+.textDescription-customizable {
+    color: #8e8ea8 !important;
+    font-size: 0.85rem !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+.errorMessage-customizable {
+    color: #ef5350 !important;
+    font-size: 0.82rem !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+.socialButton-customizable {
+    background-color: #1a1a32 !important;
+    border: 1px solid #2d2d4a !important;
+    border-radius: 10px !important;
+    color: #ebebf5 !important;
+    font-size: 0.85rem !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+.idpButton-customizable {
+    background-color: #1a1a32 !important;
+    border: 1px solid #2d2d4a !important;
+    border-radius: 10px !important;
+    color: #ebebf5 !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+.legalText-customizable {
+    color: #5c5c75 !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}

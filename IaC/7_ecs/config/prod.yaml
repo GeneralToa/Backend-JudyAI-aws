@@ -1,0 +1,46 @@
+region: "us-west-2"
+identifier: "rag-app"
+tags: 
+  Workspace: "IaC/ecs"
+
+role_arn: "arn:aws:iam::580118073904:role/TerraformRole"
+
+loadBalancer:
+  name: "alb-apps"
+  type: "application"
+  internal: true
+  tlsDomain: "judy.ai"
+
+ecs:
+  clusterName: "apps-cluster"
+  services:
+    backend:
+      name: "backend"
+      namespace: "apps"
+      serviceConnect: false
+      repoName: "backend"
+      imageTag: "latest"
+      cpu: 512
+      memory: 1024
+      essential: true
+      containerPort: 4000
+      hostPort: 4000
+      protocol: "tcp"
+      appProtocol: "http"
+      environmentVariables:
+        - type: "CONFIG"
+          name: "PORT"
+          value: 4000
+        - type: "DB"
+          name: "aurora-postgres"
+        - type: "CACHE"
+          name: "redis-cluster"
+        - type: "COGNITO"
+          name: "pool"
+      elbPriority: 1
+      elbPath: "/api/v1/*"
+      healthCheckPath: "/api/v1/"
+      autoScaling:
+        maxCapacity: 3
+        minCapacity: 1
+        desiredCount: 1

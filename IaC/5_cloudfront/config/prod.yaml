@@ -1,0 +1,22 @@
+region: "us-west-2"
+identifier: "rag-app"
+tags: 
+  Workspace: "IaC/cloudfront"
+  
+role_arn: "arn:aws:iam::580118073904:role/TerraformRole"
+
+createLogBucket: false
+  
+websites:
+  ragApp:
+    name: "judyai"
+    origin:
+      type: "s3"
+      name: "website"
+      bucketNamespace: "account-regional"
+    route53:
+      enabled: false
+      subdomain: "rag-app"
+      hostedZone: "judy.ai"
+    tlsCertificate: false
+    tlsDomain: "judy.ai"

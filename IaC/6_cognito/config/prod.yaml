@@ -1,0 +1,67 @@
+region: "us-west-2"
+identifier: "rag-app"
+tags: 
+  Workspace: "IaC/cognito"
+
+role_arn: "arn:aws:iam::580118073904:role/TerraformRole"
+
+userPool:
+  name: "pool"
+  domain_prefix: "sso"
+  managedLoginVersion: 1 #1 = hosted UI (classic), 2 = hosted UI (new)
+  mfaEnabled: false
+  adminCreateUserOnly: true
+  passwordPolicy:
+    minimumLength: 8
+    requireLowercase: true
+    requireNumbers: true
+    requireSymbols: false
+    requireUppercase: true
+
+  usernameAttributes:
+    - "email"
+
+  customStringAttributes:
+    email:
+      name: "email"
+      attributeDataType: "String"
+      developerOnlyAttribute: false
+      mutable: true
+      required: true
+      stringAttributeConstraints: # if it is a string
+        minLength: 1
+        maxLength: 256
+
+  emailConfiguration:
+    sendingAccount: "COGNITO_DEFAULT"
+    domain: "judy.ai"
+    fromAddress: "no-reply"
+
+  userPoolClient:
+    ragPoolClient:
+      secrets_recovery_window_in_days: 7
+      hostedUI:
+        enabled: true
+        flows:
+          #- "code"
+          - "implicit"
+        scopes:
+        - "openid"
+        - "email"
+        - "profile"
+        callback_urls:
+          #- "https://rag-app.judy.ai/callback.html"
+          - "https://d8xv5mej9ouxr.cloudfront.net/callback.html"
+        logout_urls:
+          #- "https://rag-app.judy.ai/index.html"
+          - "https://d8xv5mej9ouxr.cloudfront.net/index.html"
+      tokenValidityUnits:
+        accessTokenUnit: "hours"
+        accessTokenValidity: 1
+        idTokenUnit: "hours"
+        idTokenValidity: 1
+        refreshTokenUnit: "days"
+        refreshTokenValidity: 30
+      explicitAuthFlows:
+        - "ALLOW_USER_SRP_AUTH"
+        - "ALLOW_REFRESH_TOKEN_AUTH"

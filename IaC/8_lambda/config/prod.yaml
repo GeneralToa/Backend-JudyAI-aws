@@ -1,0 +1,74 @@
+region: "us-west-2"
+identifier: "rag-app"
+tags:
+  Workspace: "IaC/lambda"
+
+role_arn: "arn:aws:iam::580118073904:role/TerraformRole"
+
+s3:
+  name: "landing-zone"
+  bucketNamespace: "account-regional"
+  lambdaTrigger: false
+
+sqs:
+  name: "ingestion"
+
+dynamoDB:
+  tableName: "documents"
+
+bedrockKnowledgeBase:
+  bedrock_foundation_model_id: "amazon.nova-pro-v1:0"
+
+lambdaLayer:
+  enabled: false
+  fileName: "dependencies.zip"
+  compatibleRuntimes:
+   - "nodejs24.x"
+   - "python3.12"
+  compatibleArchitectures:
+   - "x86_64"
+   - "arm64"
+
+
+lambda:
+  dataUpload:
+    functionName: "data-upload"
+    role: "dataUpload"
+    sourceCodePath: "data_upload/handler.py"
+    outputCodePath: "data_upload/function.zip"
+    handler: "handler.lambda_handler"
+    runtime: "python3.13"
+    timeout: 30
+    vpcConfig: false
+    lambdaLayer: false
+  dataProcessor:
+    functionName: "data-processor"
+    role: "dataProcessor"
+    sourceCodePath: "data_processor/handler.py"
+    outputCodePath: "data_processor/function.zip"
+    handler: "handler.lambda_handler"
+    runtime: "python3.13"
+    timeout: 60
+    vpcConfig: false
+    lambdaLayer: false
+  retrieveAndGenerate:
+    functionName: "retrieve-and-generate"
+    role: "retrieveAndGenerate"
+    sourceCodePath: "retrieve_and_generate/handler.py"
+    outputCodePath: "retrieve_and_generate/function.zip"
+    handler: "handler.lambda_handler"
+    runtime: "python3.13"
+    timeout: 120
+    memory_size: 512
+    vpcConfig: false
+    lambdaLayer: false
+  ingestionPostProcessor:
+    functionName: "ingestion-post-processor"
+    role: "ingestionPostProcessor"
+    sourceCodePath: "ingestion_post_processor/handler.py"
+    outputCodePath: "ingestion_post_processor/function.zip"
+    handler: "handler.lambda_handler"
+    runtime: "python3.13"
+    timeout: 30
+    vpcConfig: false
+    lambdaLayer: false

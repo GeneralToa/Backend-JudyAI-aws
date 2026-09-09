@@ -1,0 +1,94 @@
+region: "us-west-2"
+identifier: "rag-app"
+tags: 
+  Workspace: "IaC/data"
+
+role_arn: "arn:aws:iam::580118073904:role/TerraformRole"
+
+s3:
+  website:
+    name: "website"
+    bucket_namespace: "account-regional"
+    presigned_url: false
+    website_bucket: true
+  landingZone:
+    name: "landing-zone"
+    bucket_namespace: "account-regional"
+    presigned_url: true
+    website_bucket: false
+
+rdsAurora:
+  bedrock:
+    db_prefix: "aurora-postgres"
+    engine: "aurora-postgresql"
+    engine_version: "17.5"
+    engine_mode: "provisioned"
+    instance_class: "db.serverless"
+    apply_immediately: true
+    auto_minor_version_upgrade: true
+    is_primary_cluster: true                  #Determines whether cluster is primary cluster with writer instance (set to false for global cluster and replica clusters)
+    serverless_scaling_configuration:
+      min_capacity: 1
+      max_capacity: 1
+    autoscaling_configuration:
+      enabled: false
+      min_capacity: 1
+      max_capacity: 5
+    db_name: "ragdb" 
+    port: 5432
+    username: "ragapp_root"
+    maintenance_window: "Sun:07:30-Sun:10:30"
+    backup_window: "10:30-13:30"
+    backup_retention_period: 1
+    skip_final_snapshot: true
+    secrets_recovery_window_in_days: 0        #For production, it is recommended to set this value to 7 or more. For development, it can be set to 0.
+    cloudwatch_logs:
+      - "postgresql"
+    proxy_enabled: false
+
+dynamoDB:
+  - table_name: "documents"
+    table_insights: false
+    hash_key: "document_id"
+    #range_key: "title"
+    attributes:
+      - name: "document_id"
+        type: "S"
+    #  - name: "title"
+    #    type: "S"
+
+sqs:
+  ingestionQueue:
+    name: "ingestion"
+    bucketEvent:
+      enabled: true
+      bucketName: "landing-zone"
+      filterPrefix: "uploads/"
+    create_queue_policy: true
+    visibility_timeout_seconds: 120
+    message_retention_seconds: 1209600
+    receive_wait_time_seconds: 20 #Long polling
+    dlq:
+      create_queue_policy: true
+      max_receive_count: 10
+      visibility_timeout_seconds: 120
+      message_retention_seconds: 86400
+      create_redrive_allow_policy: true
+
+elasticache:
+  name: "redis-cluster"
+  node_type: "cache.t4g.micro"
+  snapshot_retention_limit: 7
+  apply_immediately: false
+
+bedrockKnowledgeBase:
+  name: "knowledge-base"
+  description: "Knowledge base for RAG application"
+  auroraDbKey: "bedrock"
+  s3DataSource: "landing-zone"
+  # Bedrock Foundation Model (for RAG generation - Amazon Nova Pro for low latency)
+  # Only specify the model ID - the ARN is constructed automatically using aws_region
+  bedrock_foundation_model_id: "amazon.nova-pro-v1:0"
+  # Bedrock Embedding Model (Cohere Embed Multilingual v3 - supported with RDS vector store)
+  # Only specify the model ID - the ARN is constructed automatically using aws_region
+  bedrock_embedding_model_id: "cohere.embed-multilingual-v3"

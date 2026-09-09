@@ -1,0 +1,50 @@
+region: "us-west-2"
+identifier: "rag-app"
+tags: 
+  Workspace: "IaC/network"
+
+role_arn: "arn:aws:iam::580118073904:role/TerraformRole"
+
+azs: 2
+cidr: 10.62.0.0/16
+public_subnet_cidrs: ["10.62.0.0/23", "10.62.2.0/23", "10.62.4.0/23"]
+private_subnet_cidrs: ["10.62.6.0/23", "10.62.8.0/23", "10.62.10.0/23"]
+data_subnet_cidrs: ["10.62.12.0/23", "10.62.14.0/23", "10.62.16.0/23"]
+
+vpcEndpoints:
+  s3:
+    enabled: true
+    service: "s3"
+    service_type: "Gateway"
+  dynamodb:
+    enabled: false
+    service: "dynamodb"
+    service_type: "Gateway"
+  sqs:
+    enabled: false
+    service: "sqs"
+    private_dns_enabled: true
+  secretsmanager:
+    enabled: false
+    service: "secretsmanager"
+    private_dns_enabled: true
+  kms:
+    enabled: false
+    service: "kms"
+    private_dns_enabled: true
+  logs:
+    enabled: false
+    service: "logs"
+    private_dns_enabled: true
+  monitoring:
+    enabled: false
+    service: "monitoring"
+    private_dns_enabled: true
+  sts:
+    enabled : false
+    service: "sts"
+    private_dns_enabled: true
+  sns:
+    enabled: false
+    service: "sns"
+    private_dns_enabled: true
