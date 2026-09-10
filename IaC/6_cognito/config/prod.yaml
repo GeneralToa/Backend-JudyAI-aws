@@ -49,12 +49,15 @@ userPool:
         - "openid"
         - "email"
         - "profile"
+        cloudfrontDomain: 
+          enabled: true
+          name: "judyai"
+          callback_path: "/callback.html"
+          logout_path: "/index.html"
         callback_urls:
-          #- "https://rag-app.judy.ai/callback.html"
-          - "https://d8xv5mej9ouxr.cloudfront.net/callback.html"
+          - "https://rag-app.judy.ai/callback.html"
         logout_urls:
-          #- "https://rag-app.judy.ai/index.html"
-          - "https://d8xv5mej9ouxr.cloudfront.net/index.html"
+          - "https://rag-app.judy.ai/index.html"
       tokenValidityUnits:
         accessTokenUnit: "hours"
         accessTokenValidity: 1

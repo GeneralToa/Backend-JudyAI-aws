@@ -5,7 +5,8 @@ tags:
 
 role_arn: "arn:aws:iam::580118073904:role/TerraformRole"
 
-cloudfrontUrl: "https://d8xv5mej9ouxr.cloudfront.net"
+cloudfrontDomain: 
+  name: "judyai"
 
 s3:
   name: "website"

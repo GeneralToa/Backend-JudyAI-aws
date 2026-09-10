@@ -24,6 +24,10 @@ data "aws_s3_bucket" "s3_bucket" {
   bucket = try(local.config.s3.bucketNamespace, "") == "account-regional" ? "${local.identifier}-${local.config.s3.name}-${data.aws_caller_identity.caller_identity.account_id}-${local.config.region}-an" : "${local.identifier}-${local.config.s3.name}"
 }
 
+data "aws_ssm_parameter" "cloudfront_domain_name" {
+  name = "/${local.identifier}/cloudfront-${local.config.cloudfrontDomain.name}/domain-name"
+}
+
 # data "aws_acm_certificate" "certificate" {
 #   for_each      = try(local.config.apiGateway,{})
 #   domain        = each.value.certificateDomainName

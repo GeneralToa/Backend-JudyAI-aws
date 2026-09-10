@@ -7,8 +7,8 @@ const CONFIG = {
     // Cognito settings
     COGNITO_DOMAIN: "${data.aws_cognito_user_pool.cognito["lambdaGateway"].domain}.auth.${local.config.region}.amazoncognito.com",
     COGNITO_CLIENT_ID: "${data.aws_cognito_user_pool_clients.cognito_clients["lambdaGateway"].client_ids[0]}",
-    COGNITO_REDIRECT_URI: "${local.config.cloudfrontUrl}/callback.html",
-    COGNITO_LOGOUT_URI: "${local.config.cloudfrontUrl}/index.html",
+    COGNITO_REDIRECT_URI: "https://${data.aws_ssm_parameter.cloudfront_domain_name.value}/callback.html",
+    COGNITO_LOGOUT_URI: "https://${data.aws_ssm_parameter.cloudfront_domain_name.value}/index.html",
 };
 EOF
 }

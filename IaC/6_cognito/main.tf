@@ -97,8 +97,8 @@ resource "aws_cognito_user_pool_client" "client" {
   supported_identity_providers  = ["COGNITO"]
 
   allowed_oauth_flows_user_pool_client = each.value.hostedUI.enabled
-  callback_urls                        = each.value.hostedUI.enabled ? each.value.hostedUI.callback_urls : []
-  logout_urls                          = each.value.hostedUI.enabled ? each.value.hostedUI.logout_urls : []
+  callback_urls                        = each.value.hostedUI.enabled ? each.value.hostedUI.cloudfrontDomain.enabled ? concat(each.value.hostedUI.callback_urls, ["https://${data.aws_ssm_parameter.cloudfront_domain_name[each.key].value}${each.value.hostedUI.cloudfrontDomain.callback_path}"]) : each.value.hostedUI.callback_urls : []
+  logout_urls                          = each.value.hostedUI.enabled ? each.value.hostedUI.cloudfrontDomain.enabled ? concat(each.value.hostedUI.logout_urls, ["https://${data.aws_ssm_parameter.cloudfront_domain_name[each.key].value}${each.value.hostedUI.cloudfrontDomain.logout_path}"]) : each.value.hostedUI.logout_urls : []
   allowed_oauth_scopes                 = each.value.hostedUI.enabled ? each.value.hostedUI.scopes : []
   allowed_oauth_flows                  = each.value.hostedUI.enabled ? each.value.hostedUI.flows : []
 
