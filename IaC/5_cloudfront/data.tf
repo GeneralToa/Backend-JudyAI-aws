@@ -35,7 +35,7 @@ data "aws_lb" "alb" {
 }
 
 data "aws_route53_zone" "hosted_zone" {
-  for_each     = { for website in try(local.config.websites, {}) : website.name => website if website.route53.enabled }
+  for_each     = { for website_key, website in try(local.config.websites, {}) : website_key => website if website.route53.enabled }
   name         = each.value.route53.hostedZone
   private_zone = false
 }

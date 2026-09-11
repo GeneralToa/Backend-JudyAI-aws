@@ -1,5 +1,5 @@
 resource "aws_route53_record" "cloudfront" {
-  for_each = { for website in try(local.config.websites, {}) : website.name => website if website.route53.enabled }
+  for_each = { for website_key, website in try(local.config.websites, {}) : website_key => website if website.route53.enabled }
 
   zone_id = data.aws_route53_zone.hosted_zone[each.key].zone_id
   name    = can(each.value.route53.subdomain) ? "${each.value.route53.subdomain}.${each.value.route53.hostedZone}" : each.value.route53.hostedZone
