@@ -17,3 +17,13 @@ resource "aws_ssm_parameter" "data_source_id" {
     Name = "${local.identifier}-ds-id"
   }
 }
+
+resource "aws_ssm_parameter" "kms_dynamodb" {
+  name  = "/${local.identifier}/kms/dynamodb-arn"
+  type  = "String"
+  value = aws_kms_key.dynamodb.arn
+
+  tags = {
+    Name = "${local.identifier}-kms-dynamodb-arn"
+  }
+}

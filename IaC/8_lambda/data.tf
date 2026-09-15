@@ -55,3 +55,7 @@ data "aws_ssm_parameter" "knowledge_base_id" {
 data "aws_ssm_parameter" "data_source_id" {
   name = "/${local.identifier}/bedrock/data-source-id"
 }
+
+data "aws_ssm_parameter" "kms_dynamodb_arn" {
+  name = "/${local.identifier}/kms/dynamodb-arn"
+}

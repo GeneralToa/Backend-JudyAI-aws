@@ -13,6 +13,14 @@ resource "aws_iam_policy" "data_upload_policy" {
         Effect   = "Allow"
         Action   = ["dynamodb:PutItem"]
         Resource = [data.aws_dynamodb_table.dynamodb_table.arn]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+        ]
+        Resource = data.aws_ssm_parameter.kms_dynamodb_arn.value
       }
     ]
   })
@@ -73,6 +81,14 @@ resource "aws_iam_policy" "data_processor_policy" {
         Effect   = "Allow"
         Action   = ["iam:PassRole"]
         Resource = [aws_iam_role.scheduler_execution.arn]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+        ]
+        Resource = data.aws_ssm_parameter.kms_dynamodb_arn.value
       }
     ]
   })
