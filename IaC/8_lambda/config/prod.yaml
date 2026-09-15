@@ -40,7 +40,8 @@ lambda:
     runtime: "python3.13"
     timeout: 30
     vpcConfig: false
-    lambdaLayer: false
+    lambdaLayer: 
+      enabled: false
   dataProcessor:
     functionName: "data-processor"
     role: "dataProcessor"
@@ -50,7 +51,8 @@ lambda:
     runtime: "python3.13"
     timeout: 60
     vpcConfig: false
-    lambdaLayer: false
+    lambdaLayer:
+      enabled: false
   retrieveAndGenerate:
     functionName: "retrieve-and-generate"
     role: "retrieveAndGenerate"
@@ -61,7 +63,10 @@ lambda:
     timeout: 120
     memory_size: 512
     vpcConfig: false
-    lambdaLayer: false
+    lambdaLayer:
+      enabled: true
+      arns:
+        - "arn:aws:lambda:us-west-2:856699698935:layer:strands-agents-py3_13-x86_64:2"
   ingestionPostProcessor:
     functionName: "ingestion-post-processor"
     role: "ingestionPostProcessor"
@@ -71,4 +76,5 @@ lambda:
     runtime: "python3.13"
     timeout: 30
     vpcConfig: false
-    lambdaLayer: false
+    lambdaLayer:
+      enabled: false
