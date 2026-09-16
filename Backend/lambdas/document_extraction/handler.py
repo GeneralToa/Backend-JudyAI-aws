@@ -243,95 +243,99 @@ def read_s3_json(s3_uri):
     return json.loads(body), bucket, key
 
 
-def collect_text(node, collected):
+def standard_output_paths(job_metadata):
+    """Resolve job_metadata.json to the standard output documents it points at."""
+    paths = []
+    for segment in job_metadata.get("output_metadata", []):
+        for asset in segment.get("segment_metadata", []):
+            path = asset.get("standard_output_path")
+            if path:
+                paths.append(path)
+    return paths
+
+
+def page_markdown(document):
     """
-    Walk BDA output and collect page text in document order.
+    Join a BDA standard output document into text, in page order.
 
-    BDA standard output nests page content differently depending on the input
-    format, so rather than hard-coding one path this walks the structure and
-    picks up the text-bearing fields wherever they appear. Markdown is preferred
-    over plain text because it preserves the table structure that contract
-    clauses frequently rely on.
+    Only pages[] is read, deliberately. BDA returns the same content twice:
+    once as whole-page markdown in pages[], and again split per element in
+    elements[]. Walking the structure generically collects both - on a real
+    5-page advisor agreement that produced 31,008 characters against an actual
+    15,527, with every sentence duplicated.
+
+    Page markdown also preserves tables as markdown pipe tables, which matters
+    because commission schedules, renewal windows and payment terms tend to
+    live in tables, and those are exactly what the risk and obligation agents
+    need to read.
     """
-    if isinstance(node, dict):
-        representation = node.get("representation")
-        if isinstance(representation, dict):
-            value = representation.get("markdown") or representation.get("text")
-            if isinstance(value, str) and value.strip():
-                collected.append(value.strip())
-                return
+    pages = sorted(document.get("pages", []), key=lambda page: page.get("page_index", 0))
 
-        for key in ("markdown", "text"):
-            value = node.get(key)
-            if isinstance(value, str) and value.strip():
-                collected.append(value.strip())
-                return
+    blocks = []
+    for page in pages:
+        markdown = (page.get("representation") or {}).get("markdown")
+        if isinstance(markdown, str) and markdown.strip():
+            blocks.append(markdown.strip())
 
-        for value in node.values():
-            collect_text(value, collected)
+    if blocks:
+        return "\n\n".join(blocks)
 
-    elif isinstance(node, list):
-        for item in node:
-            collect_text(item, collected)
+    # Fallback for a result with no pages[]: use elements in reading order.
+    # Not expected for DOCX or PDF, but preferable to returning nothing.
+    elements = sorted(
+        document.get("elements", []), key=lambda el: el.get("reading_order", 0)
+    )
+    element_blocks = [
+        (el.get("representation") or {}).get("markdown", "").strip()
+        for el in elements
+    ]
+    return "\n\n".join(block for block in element_blocks if block)
+
+
+def count_pages(document):
+    """Page count from BDA output metadata, falling back to the pages array."""
+    metadata = document.get("metadata") or {}
+    if isinstance(metadata.get("number_of_pages"), int):
+        return metadata["number_of_pages"]
+
+    pages = document.get("pages")
+    return len(pages) if isinstance(pages, list) else 0
 
 
 def extract_text_from_bda_output(output_s3_uri):
     """
-    Resolve BDA's job metadata to the standard output document and normalize it.
+    Read BDA's output and normalize it to plain text.
 
-    BDA writes a job_metadata.json describing one or more output segments; the
-    actual content lives in the standard output file each segment points at.
+    Structure, verified against real BDA output from this account:
+
+        job_metadata.json
+          └─ output_metadata[].segment_metadata[].standard_output_path
+               └─ result.json
+                    ├─ metadata.number_of_pages
+                    ├─ pages[].representation.markdown    <- used
+                    └─ elements[].representation.markdown <- same text again
 
     Returns (text, page_count, output_s3_key).
     """
-    metadata, _, metadata_key = read_s3_json(output_s3_uri)
+    job_metadata, _, metadata_key = read_s3_json(output_s3_uri)
 
-    segments = metadata.get("output_metadata") or metadata.get("outputMetadata") or []
+    paths = standard_output_paths(job_metadata)
+    if not paths:
+        raise RuntimeError(f"No standard_output_path in BDA job metadata: {output_s3_uri}")
 
-    standard_output_uris = []
-    for segment in segments:
-        for asset in segment.get("segment_metadata", segment.get("segmentMetadata", [])):
-            uri = (
-                asset.get("standard_output_path")
-                or asset.get("standardOutputPath")
-                or asset.get("standard_output_uri")
-            )
-            if uri:
-                standard_output_uris.append(uri)
-
-    # Fall back to the metadata document itself if it already carries content,
-    # which happens for single-segment results.
-    if not standard_output_uris:
-        collected = []
-        collect_text(metadata, collected)
-        text = "\n\n".join(collected)
-        return text, count_pages(metadata), metadata_key
-
-    collected = []
+    blocks = []
     page_count = 0
     last_key = metadata_key
 
-    for uri in standard_output_uris:
-        document, _, key = read_s3_json(uri)
+    for path in paths:
+        document, _, key = read_s3_json(path)
         last_key = key
         page_count += count_pages(document)
-        collect_text(document, collected)
+        text = page_markdown(document)
+        if text:
+            blocks.append(text)
 
-    return "\n\n".join(collected), page_count, last_key
-
-
-def count_pages(document):
-    """Best-effort page count from BDA output."""
-    pages = document.get("pages")
-    if isinstance(pages, list):
-        return len(pages)
-
-    metadata = document.get("metadata") or {}
-    for key in ("number_of_pages", "numberOfPages", "page_count", "pageCount"):
-        if isinstance(metadata.get(key), int):
-            return metadata[key]
-
-    return 0
+    return "\n\n".join(blocks), page_count, last_key
 
 
 # =============================================================
