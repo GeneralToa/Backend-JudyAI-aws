@@ -3,4 +3,5 @@
 terraform.tfstate
 terraform.tfstate.backup
 */*/*/output/
-*/*/*/requirements.txt
+*/*/*/requirements.txt__pycache__/
+*.pyc
