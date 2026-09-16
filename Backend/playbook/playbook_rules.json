@@ -1,0 +1,563 @@
+{
+  "source_document": "Playbook_part2_full.docx",
+  "generated_at": "2026-09-16T18:52:54Z",
+  "generated_by": "Backend/playbook/build_rules.py",
+  "column_headers": [
+    "Purchasing Agreement Section",
+    "If supplier OBJECTS to the Following Sentence:",
+    "Then"
+  ],
+  "rule_count": 11,
+  "rules": [
+    {
+      "id": "access_to_facilities",
+      "section": "Access to facilities",
+      "contract_types": [
+        "sow",
+        "purchase_agreement",
+        "msa"
+      ],
+      "escalates_to_legal": false,
+      "triggers": [
+        {
+          "default_clause": "Neither Supplier nor suppliers’ personnel require badge (unescorted) access to [ Company] facilities (including offices, data centers, and warehouses). Visitor access is sufficient for Supplier to perform the Services.",
+          "condition": "Unescorted access to [company] facilities is necessary in order for supplier to perform the Services"
+        }
+      ],
+      "actions": [
+        {
+          "type": "replace",
+          "text": "“Access to Facilities. To the extent supplier performs Services at [company] facilities, supplier shall:\nPerform all Services during [company] normal working hours (Monday through Friday, 8:00 am to 6:00pm) unless it would interfere with [company] daily business and computer operations, or [company] other wise specifically requests the Services to be done outside of [company] working hours; and\nComply with all obligation related to background investigations described in the attached background investigation exhibit.",
+          "note": "Replace this section with the following"
+        },
+        {
+          "type": "attach_exhibit",
+          "text": "Background Investigation Exhibit"
+        }
+      ],
+      "raw": {
+        "if_supplier_objects": [
+          "Neither Supplier nor suppliers’ personnel require badge (unescorted) access to [ Company] facilities (including offices, data centers, and warehouses). Visitor access is sufficient for Supplier to perform the Services.",
+          "Because",
+          "Unescorted access to [company] facilities is necessary in order for supplier to perform the Services"
+        ],
+        "then": [
+          "{Replace this section with the following}",
+          "“Access to Facilities. To the extent supplier performs Services at [company] facilities, supplier shall:",
+          "Perform all Services during [company] normal working hours (Monday through Friday, 8:00 am to 6:00pm) unless it would interfere with [company] daily business and computer operations, or [company] other wise specifically requests the Services to be done outside of [company] working hours; and",
+          "Comply with all obligation related to background investigations described in the attached background investigation exhibit.",
+          "AND",
+          "Attached the Background Investigation Exhibit to the Purchasing agreement."
+        ]
+      }
+    },
+    {
+      "id": "access_to_networks_and_equipment",
+      "section": "Access to Networks and Equipment",
+      "contract_types": [
+        "sow",
+        "purchase_agreement",
+        "msa"
+      ],
+      "escalates_to_legal": false,
+      "triggers": [
+        {
+          "default_clause": "Neither Supplier nor Suppliers personnel requires access to any internal [ company] networks nor will any Supplier personnel be issued any [company] hardware( including laptops, phones, and tablets). Guest network access is sufficient for Supplier o perform the Services.”",
+          "condition": "Services cannot be preformed unless supplier is granted access to internal networks or is issued hardware"
+        }
+      ],
+      "actions": [
+        {
+          "type": "replace",
+          "text": "“ Access to networks and Equipment. To the extent Supplier Personnel will have access to [company’s] networks or will be issued any [company] hardware, including laptops, phones, or tablets:\nSupplier shall comply with all obligation related to Background Investigations described in the Background Investigation Exhibit, and\nSupplier Personnel shall use such networks, laptops or other [company] equipment for the sole purpose of providing Services to [Company]\nSupplier shall ensure that supplier Personnel do not tamper with disable , modify or otherwise yield inoperable and y privacy, security, or access control on [company] networks or hardware.”",
+          "note": "Replace this section with the following"
+        },
+        {
+          "type": "attach_exhibit",
+          "text": "background investigation Exhibit"
+        }
+      ],
+      "raw": {
+        "if_supplier_objects": [
+          "Neither Supplier nor Suppliers personnel requires access to any internal [ company] networks nor will any Supplier personnel be issued any [company] hardware( including laptops, phones, and tablets). Guest network access is sufficient for Supplier o perform the Services.”",
+          "{Because}",
+          "Services cannot be preformed unless supplier is granted access to internal networks or is issued hardware"
+        ],
+        "then": [
+          "{Replace this section with the following:",
+          "“ Access to networks and Equipment. To the extent Supplier Personnel will have access to [company’s] networks or will be issued any [company] hardware, including laptops, phones, or tablets:",
+          "Supplier shall comply with all obligation related to Background Investigations described in the Background Investigation Exhibit, and",
+          "Supplier Personnel shall use such networks, laptops or other [company] equipment for the sole purpose of providing Services to [Company]",
+          "Supplier shall ensure that supplier Personnel do not tamper with disable , modify or otherwise yield inoperable and y privacy, security, or access control on [company] networks or hardware.”",
+          "{and}",
+          "{ attach the background investigation Exhibit to the purchasing agreement}"
+        ]
+      }
+    },
+    {
+      "id": "access_to_personal_information",
+      "section": "Access to Personal information",
+      "contract_types": [
+        "sow",
+        "purchase_agreement"
+      ],
+      "escalates_to_legal": true,
+      "triggers": [
+        {
+          "default_clause": "Supplier will not have access to personally identifiable information of any [ company] {contact legal} Supplier will not provide To  [Judy] the health or medical information of any individual",
+          "condition": null
+        }
+      ],
+      "actions": [
+        {
+          "type": "identify_contract_type",
+          "note": "identify contract in use"
+        },
+        {
+          "type": "escalate_to_legal",
+          "note": "connect with legal agent"
+        },
+        {
+          "type": "note",
+          "text": "SOW, PA"
+        }
+      ],
+      "raw": {
+        "if_supplier_objects": [
+          "Supplier will not have access to personally identifiable information of any [ company]",
+          "{contact legal}",
+          "Supplier will not provide",
+          "To  [Judy] the health or medical information of any individual"
+        ],
+        "then": [
+          "{ identify contract in use }{connect with legal agent}",
+          "SOW, PA"
+        ]
+      }
+    },
+    {
+      "id": "access_to_customer_data",
+      "section": "Access to Customer data",
+      "contract_types": [
+        "sow",
+        "purchase_agreement",
+        "msa"
+      ],
+      "escalates_to_legal": true,
+      "triggers": [
+        {
+          "default_clause": "Supplier will not have access to information provided to [company] by its customers, either directly, via email or othewise, or by the customer uploading the information in to judy account o product",
+          "condition": null
+        }
+      ],
+      "actions": [
+        {
+          "type": "identify_contract_type",
+          "note": "identify contract in use"
+        },
+        {
+          "type": "escalate_to_legal",
+          "note": "connect with legal agent"
+        }
+      ],
+      "raw": {
+        "if_supplier_objects": [
+          "Supplier will not have access to information provided to [company] by its customers, either directly, via email or othewise, or by the customer uploading the information in to judy account o product"
+        ],
+        "then": [
+          "{ identify contract in use }{connect with legal agent}"
+        ]
+      }
+    },
+    {
+      "id": "supplier_personnel",
+      "section": "Supplier Personnel",
+      "contract_types": [
+        "sow",
+        "purchase_agreement",
+        "msa"
+      ],
+      "escalates_to_legal": false,
+      "triggers": [
+        {
+          "default_clause": "All services will be performed by employees of supplier",
+          "condition": "Supplier will utilize persons who are not the employees or Supplier in order to peform the Services( e.g subcontractor, independent contracts) {suggest contact legal professional} Supplier personnel will not be under the direct day to day supervision of [company]"
+        }
+      ],
+      "actions": [
+        {
+          "type": "insert",
+          "text": "[Company] acknowledges and agrees that supplier may use the following subcontracts in connection with the Services: [ Suggest Note to Supplier : list all subcontracts to be used here; if no subcontracts are listed in the space then no subcontracts may be used to perform the Service]",
+          "note": "input the following"
+        },
+        {
+          "type": "require_approval",
+          "note": "request"
+        },
+        {
+          "type": "note",
+          "text": "Business stakeholders approval of list of subcontractors"
+        }
+      ],
+      "raw": {
+        "if_supplier_objects": [
+          "All services will be performed by employees of supplier",
+          "{Because}",
+          "Supplier will utilize persons who are not the employees or Supplier in order to peform the Services( e.g subcontractor, independent contracts)",
+          "{suggest contact legal",
+          "professional}",
+          "Supplier personnel will not be under the direct day to day supervision of [company]"
+        ],
+        "then": [
+          "{ input the following}",
+          "[Company] acknowledges and agrees that supplier may use the following subcontracts in connection with the Services: [ Suggest Note to Supplier : list all subcontracts to be used here; if no subcontracts are listed in the space then no subcontracts may be used to perform the Service]",
+          "{ request}",
+          "Business stakeholders approval of list of subcontractors"
+        ]
+      }
+    },
+    {
+      "id": "ownership",
+      "section": "ownership",
+      "contract_types": [
+        "sow",
+        "purchase_agreement",
+        "msa"
+      ],
+      "escalates_to_legal": true,
+      "triggers": [
+        {
+          "default_clause": "All",
+          "condition": "Suppliers is a trainer, teacher or presenter using stock training materials, textbooks, pamphlets or presentations AND"
+        },
+        {
+          "default_clause": "Supplier will not be creating custom training Materials for [company] { any language section 5} {contact legal} Supplier is not a trainer Teacher or presenter Or Supplier is trainer/teacher presenter but will be creating customer training materials for [company]",
+          "condition": null
+        }
+      ],
+      "actions": [
+        {
+          "type": "insert",
+          "text": "",
+          "note": "input the following"
+        },
+        {
+          "type": "cross_reference",
+          "note": "This section modifies that license granted by Supplier to [Company] in {section 9"
+        },
+        {
+          "type": "note",
+          "text": "Ownership. No customer Deliverables are contemplated by his agreement. In connection with the Services, Supplier may provide [company] training materials , books, manuals, templates, tools, a, binders, software presentations, video recordings, and audio recording’s that were prepared by supplier prior to o independent of this agreement and without use [companys] confidential information (training materials). The training materials shall email the sole property of supplier, provided that supplier grans the [company] a non-exclusive, on-transferable, fully paid, royalty-free, irrevocable license to reproduce and distribute the training materials internally throughout the company, Hower, [company shall not use any training materials to provide consulting o training services  of tis own and shall not sell, transfer , or otherwise give o provide the training materials to any third party.  of the [ Company Terms]}"
+        },
+        {
+          "type": "escalate_to_legal",
+          "note": "connect to legal  provider for  appropriate language"
+        }
+      ],
+      "raw": {
+        "if_supplier_objects": [
+          "All",
+          "{because}",
+          "Suppliers is a trainer, teacher or presenter using stock training materials, textbooks, pamphlets or presentations",
+          "AND",
+          "Supplier will not be creating custom training",
+          "Materials for [company]",
+          "{ any language section 5}",
+          "{contact legal}",
+          "Supplier is not a trainer",
+          "Teacher or presenter",
+          "Or",
+          "Supplier is trainer/teacher presenter but will be creating customer training materials for [company]"
+        ],
+        "then": [
+          "{ input the following}",
+          "Ownership. No customer Deliverables are contemplated by his agreement. In connection with the Services, Supplier may provide [company] training materials , books, manuals, templates, tools, a, binders, software presentations, video recordings, and audio recording’s that were prepared by supplier prior to o independent of this agreement and without use [companys] confidential information (training materials). The training materials shall email the sole property of supplier, provided that supplier grans the [company] a non-exclusive, on-transferable, fully paid, royalty-free, irrevocable license to reproduce and distribute the training materials internally throughout the company, Hower, [company shall not use any training materials to provide consulting o training services  of tis own and shall not sell, transfer , or otherwise give o provide the training materials to any third party. {This section modifies that license granted by Supplier to [Company] in {section 9} of the [ Company Terms]}",
+          "{ connect to legal  provider for  appropriate language}"
+        ]
+      }
+    },
+    {
+      "id": "software_development",
+      "section": "Software Development",
+      "contract_types": [
+        "sow",
+        "purchase_agreement",
+        "msa"
+      ],
+      "escalates_to_legal": false,
+      "triggers": [
+        {
+          "default_clause": "“Supplier’s services do not include development or delivery of solutions for [company] core systems or products.”",
+          "condition": null
+        }
+      ],
+      "actions": [
+        {
+          "type": "replace",
+          "text": "",
+          "note": "replace sentence with the following"
+        },
+        {
+          "type": "placeholder",
+          "note": "link software development guidelines"
+        },
+        {
+          "type": "note",
+          "text": "Technology. Suppliers  Deliverables or Goods may be incorporated by [Company] into its online, web-based applications or the platform provided by [company]. In developing the deliverables or goods, supplier will abide by the ‘software Development Guidelines  attached hereto. If any Develiverables or Goods or any items or process used by supplier to provide the severs, Deliverables or goods( collectively, “infringing items(s)”) becomes, or in the reasonable opinion of [company] is likely to become, the subject of an infringement or misappropriation claim, supplier will, in addition to its indemnification obligations provided in the [ Standard Purchase Terms] and to the other rights and remedies [company] may have under the [Standard Purchased Terms], promptly, at supplier’s expense, secure the right for [company] to continue using the infringing item or replace or modify the infringing item to make it non-infringing, provided that any such replacement or modification will not degrade the performance or quality of the affected Deliverables, Goods, or Services ( to the extend relevant). If  a credible claim of infringement is filed and neither of the above actions is commercially practical and if further use of the infringing item by [Company] is enjoined by the order  of a court of competent jurisdiction, and only in such event, supplier shall refund the cost of the infringing item and compensate [company] for resulting impacts, if any on the other deliverables, goods, or services"
+        },
+        {
+          "type": "attach_exhibit",
+          "text": "Software development exhibit"
+        }
+      ],
+      "raw": {
+        "if_supplier_objects": [
+          "“Supplier’s services do not include development or delivery of solutions for [company] core systems or products.”",
+          "Because"
+        ],
+        "then": [
+          "{replace sentence with the following}",
+          "Technology. Suppliers  Deliverables or Goods may be incorporated by [Company] into its online, web-based applications or the platform provided by [company]. In developing the deliverables or goods, supplier will abide by the ‘software Development Guidelines { link software development guidelines} attached hereto. If any Develiverables or Goods or any items or process used by supplier to provide the severs, Deliverables or goods( collectively, “infringing items(s)”) becomes, or in the reasonable opinion of [company] is likely to become, the subject of an infringement or misappropriation claim, supplier will, in addition to its indemnification obligations provided in the [ Standard Purchase Terms] and to the other rights and remedies [company] may have under the [Standard Purchased Terms], promptly, at supplier’s expense, secure the right for [company] to continue using the infringing item or replace or modify the infringing item to make it non-infringing, provided that any such replacement or modification will not degrade the performance or quality of the affected Deliverables, Goods, or Services ( to the extend relevant). If  a credible claim of infringement is filed and neither of the above actions is commercially practical and if further use of the infringing item by [Company] is enjoined by the order  of a court of competent jurisdiction, and only in such event, supplier shall refund the cost of the infringing item and compensate [company] for resulting impacts, if any on the other deliverables, goods, or services",
+          "{ Attach the Software development exhibit}"
+        ]
+      }
+    },
+    {
+      "id": "trademark_use",
+      "section": "Trademark Use",
+      "contract_types": [
+        "sow",
+        "purchase_agreement",
+        "msa"
+      ],
+      "escalates_to_legal": false,
+      "triggers": [
+        {
+          "default_clause": "“supplier will not use [company] names, trademarks, or screenshots of any [company] application or services.”",
+          "condition": "Supplier will use [company’s] logo on materials produced for [company] or to advertise an event in which [company] is participating."
+        },
+        {
+          "default_clause": "“Supplier will not use [company] names  trademarks, or screenshots of any [company] applications or services",
+          "condition": "Supplier wants to use [companys] names, trademark, or screenshots on its website or in its marketing materials or for ay other purpose other than (i) to produce materials for [company] which contain the corporate logo or (ii) to advertise an event in which [company] is participating"
+        }
+      ],
+      "actions": [
+        {
+          "type": "replace",
+          "text": "Trademarks. [company] grants to Supplier a limited nontransferable, nonexclusive license to use [companys]  corporate logos solely in connection with the Services described herin. Upon completion of the Servies or earlier termination of this Agreement, Supplier must immediately cease use of any [company] corporate logo. [company]  may revoke this license at any time.",
+          "note": "Replace section 8 with the following"
+        },
+        {
+          "type": "optional",
+          "text": "",
+          "note": "option add  verbiage and company guidelines link"
+        },
+        {
+          "type": "placeholder",
+          "note": "guidelines link"
+        },
+        {
+          "type": "note",
+          "text": "All use of [company’s] corporate logo shall be in accordance with [company’s]  corporate logo usage guidelines available at"
+        },
+        {
+          "type": "require_approval",
+          "note": "suggested option- request written confirmation from Stakeholders that proposed use by supplier is acceptable and has been approved by the business unit paying for the services"
+        },
+        {
+          "type": "require_approval",
+          "note": "multiple levels of approvals are suggested"
+        },
+        {
+          "type": "note",
+          "text": "(2)"
+        }
+      ],
+      "raw": {
+        "if_supplier_objects": [
+          "“supplier will not use [company] names, trademarks, or screenshots of any [company] application or services.”",
+          "Because",
+          "Supplier will use [company’s] logo on materials produced for [company] or to advertise an event in which [company] is participating.",
+          "_______________",
+          "“Supplier will not use [company] names  trademarks, or screenshots of any [company] applications or services",
+          "Because",
+          "Supplier wants to use [companys] names, trademark, or screenshots on its website or in its marketing materials or for ay other purpose other than (i) to produce materials for [company] which contain the corporate logo or (ii) to advertise an event in which [company] is participating"
+        ],
+        "then": [
+          "{ Replace section 8 with the following}",
+          "Trademarks. [company] grants to Supplier a limited nontransferable, nonexclusive license to use [companys]  corporate logos solely in connection with the Services described herin. Upon completion of the Servies or earlier termination of this Agreement, Supplier must immediately cease use of any [company] corporate logo. [company]  may revoke this license at any time.",
+          "{option add  verbiage and company guidelines link}",
+          "All use of [company’s] corporate logo shall be in accordance with [company’s]  corporate logo usage guidelines available at {guidelines link}",
+          "{suggested option- request written confirmation from Stakeholders that proposed use by supplier is acceptable and has been approved by the business unit paying for the services}",
+          "(2) {multiple levels of approvals are suggested}"
+        ]
+      }
+    },
+    {
+      "id": "online_marketing_activities",
+      "section": "Online marketing Activities",
+      "contract_types": [
+        "sow",
+        "purchase_agreement",
+        "msa"
+      ],
+      "escalates_to_legal": true,
+      "triggers": [
+        {
+          "default_clause": "Supplier will not provide online behavior tracking",
+          "condition": "Supplier Services will include online behavior tracking."
+        },
+        {
+          "default_clause": "“Supplier will not provide search engine optimization or link-building services.”",
+          "condition": "Suppliers will provide SEO, link-building, or similar services."
+        }
+      ],
+      "actions": [
+        {
+          "type": "replace",
+          "text": "Marketing Supplier is on the NAI list (http://www.networkadvertising.org/managing/opt_out.asp) will remain on such list, and will honor such opt outs contained in the list for the term of the agreement",
+          "note": "replace sentence"
+        },
+        {
+          "type": "escalate_to_legal",
+          "note": "suggested consult legal expert regarding information gained via behavior tracking"
+        },
+        {
+          "type": "replace",
+          "text": "Marketing. Supplier will not provide online behavior tracking. In providing search engine optimization and/or link-building Services:\nSupplier agrees: (1) links will not be places on blogs/websites that are strongly SEO or  Affiliate Marketing related; (2) links will not be places o blogs/ websites that feature content/ advertising that endorse text link buying, link advertising; (3) Links will be built from reputable, quality websites on natural and longstanding URLS that are relevant for driving traffic and SEO benefits towards [company] (4) Links pointed to [company] owned websites will not be placed on blogs/websites that also include links to bad content( porn, pills, or casinos); (5) Supplier will not pay to place a link on a website without [companys] prior written consent; and (6) Supplier will not engage in any of the following practices: content scraping, keywording stuffing, hidden text or link, spamdexing.\nSupplier will disclose its SEO techniques of [company] as it pertains to the project and will maintain detailed reports of techniques used for the relevant project.\nSupplier will adhere to the Quality Guidelines available on Googles website: https://developers.google.com/search/docs/essentials\nIf [company] finds a link and /or linking page buil or places by supplier to be compromising in anyway. [company] reserves the right to ask that the lik be removed, or the page be modified or taken down.\nAny violation of the above clauses may result in immediate termination of the agreement by [company].”",
+          "note": "replace sentence"
+        }
+      ],
+      "raw": {
+        "if_supplier_objects": [
+          "Supplier will not provide online behavior tracking",
+          "Because",
+          "Supplier Services will include online behavior tracking.",
+          "_______________",
+          "“Supplier will not provide search engine optimization or link-building services.”",
+          "Because",
+          "Suppliers will provide SEO, link-building, or similar services."
+        ],
+        "then": [
+          "{replace sentence}",
+          "Marketing Supplier is on the NAI list (http://www.networkadvertising.org/managing/opt_out.asp) will remain on such list, and will honor such opt outs contained in the list for the term of the agreement",
+          "And",
+          "{suggested consult legal expert regarding information gained via behavior tracking}",
+          "{replace sentence}",
+          "Marketing. Supplier will not provide online behavior tracking. In providing search engine optimization and/or link-building Services:",
+          "Supplier agrees: (1) links will not be places on blogs/websites that are strongly SEO or  Affiliate Marketing related; (2) links will not be places o blogs/ websites that feature content/ advertising that endorse text link buying, link advertising; (3) Links will be built from reputable, quality websites on natural and longstanding URLS that are relevant for driving traffic and SEO benefits towards [company] (4) Links pointed to [company] owned websites will not be placed on blogs/websites that also include links to bad content( porn, pills, or casinos); (5) Supplier will not pay to place a link on a website without [companys] prior written consent; and (6) Supplier will not engage in any of the following practices: content scraping, keywording stuffing, hidden text or link, spamdexing.",
+          "Supplier will disclose its SEO techniques of [company] as it pertains to the project and will maintain detailed reports of techniques used for the relevant project.",
+          "Supplier will adhere to the Quality Guidelines available on Googles website: https://developers.google.com/search/docs/essentials",
+          "If [company] finds a link and /or linking page buil or places by supplier to be compromising in anyway. [company] reserves the right to ask that the lik be removed, or the page be modified or taken down.",
+          "Any violation of the above clauses may result in immediate termination of the agreement by [company].”"
+        ]
+      }
+    },
+    {
+      "id": "contact_lists",
+      "section": "Contact Lists",
+      "contract_types": [
+        "sow",
+        "purchase_agreement",
+        "msa"
+      ],
+      "escalates_to_legal": true,
+      "triggers": [
+        {
+          "default_clause": "Supplier does not require [company] to provide any business or personal contact information of any third party.”",
+          "condition": "Supplier will need access to a list of current customers of [company] Supplier does not require[company] to provide any business or personal contact information of any third party.’ Supplier will need access to a list of prospective customers of [company]"
+        },
+        {
+          "default_clause": "Supplier will not provide to [company] any business or personal contact information of any third party.”",
+          "condition": "Supplier will provide [company] with names, contact, information, email addresses, etc."
+        }
+      ],
+      "actions": [
+        {
+          "type": "replace",
+          "text": "Supplier shall treat as confidential the identity of any prospective customer of [company] and all lists of such prospective customers shall be considered confidential information under this Agreement.”",
+          "note": "replace"
+        },
+        {
+          "type": "replace",
+          "text": "In connection with the collection and/or distribution o contact list to [company], supplier warrants that: (i) it has complied with all applicable laws in the collection of the information provided to [company], (ii) it has all rights necessary to transfer this information to [company] (iii) all individuals who provided their contact information have consented to the intended the use of their contact information; (iv) it has complied with all contractual obligations owed to third parties; and (v) it has made commercially reasonable efforts to ensure the List does not contain seeded addresses intended to for the collection of spam. Supplier does not require [company] to provide any business or personal contact information of any third party.”",
+          "note": "replace"
+        },
+        {
+          "type": "escalate_to_legal",
+          "note": "contact legal experts"
+        }
+      ],
+      "raw": {
+        "if_supplier_objects": [
+          "Supplier does not require [company] to provide any business or personal contact information of any third party.”",
+          "Because",
+          "Supplier will need access to a list of current customers of [company]",
+          "Supplier does not require[company] to provide any business or personal contact information of any third party.’",
+          "Because",
+          "Supplier will need access to a list of prospective customers of [company]",
+          "Supplier will not provide to [company] any business or personal contact information of any third party.”",
+          "Because",
+          "Supplier will provide [company] with names, contact, information, email addresses, etc."
+        ],
+        "then": [
+          "{replace}",
+          "Supplier shall treat as confidential the identity of any prospective customer of [company] and all lists of such prospective customers shall be considered confidential information under this Agreement.”",
+          "{replace}",
+          "In connection with the collection and/or distribution o contact list to [company], supplier warrants that: (i) it has complied with all applicable laws in the collection of the information provided to [company], (ii) it has all rights necessary to transfer this information to [company] (iii) all individuals who provided their contact information have consented to the intended the use of their contact information; (iv) it has complied with all contractual obligations owed to third parties; and (v) it has made commercially reasonable efforts to ensure the List does not contain seeded addresses intended to for the collection of spam. Supplier does not require [company] to provide any business or personal contact information of any third party.”",
+          "{contact legal experts}"
+        ]
+      }
+    },
+    {
+      "id": "correspondence",
+      "section": "Correspondence",
+      "contract_types": [
+        "sow",
+        "purchase_agreement",
+        "msa"
+      ],
+      "escalates_to_legal": true,
+      "triggers": [
+        {
+          "default_clause": "Supplier will not make telephone calls or send correspondence ( including emails) on [company] behalf",
+          "condition": "Supplier will call, email, or otherwise contact current or prospective [company] Customers"
+        },
+        {
+          "default_clause": "Supplier will not make telephone calls or send correspondence (including emails) on [company] behalf.”",
+          "condition": "Supplier will call, email, or  otherwise contact other individuals on [company] behalf"
+        }
+      ],
+      "actions": [
+        {
+          "type": "replace",
+          "text": "Correspondence For any emails sent by supplier to current or prospective customers of [company] in connection with this Agreement, Supplier agrees that it shall be the considered the ‘sender” for purposes of CAN-SPAM. Supplier warrants that it will do the following when contacting anyone on [company] behalf:\nAlways be truthful about who they are,\nNot use false pretenses, such as fraudulent statements/impersonations to obtain information,\nI comply with all applicable laws, including CAN-SPAM  ( if applicable) and\nComply with all relevant, posted privacy statements  and terms of use.”",
+          "note": "replace"
+        },
+        {
+          "type": "escalate_to_legal",
+          "note": "suggest contact legal"
+        }
+      ],
+      "raw": {
+        "if_supplier_objects": [
+          "Supplier will not make telephone calls or send correspondence ( including emails) on [company] behalf",
+          "Because",
+          "Supplier will call, email, or otherwise contact current or prospective [company] Customers",
+          "Supplier will not make telephone calls or send correspondence (including emails) on [company] behalf.”",
+          "Because",
+          "Supplier will call, email, or  otherwise contact other individuals on [company] behalf"
+        ],
+        "then": [
+          "{replace}",
+          "Correspondence For any emails sent by supplier to current or prospective customers of [company] in connection with this Agreement, Supplier agrees that it shall be the considered the ‘sender” for purposes of CAN-SPAM. Supplier warrants that it will do the following when contacting anyone on [company] behalf:",
+          "Always be truthful about who they are,",
+          "Not use false pretenses, such as fraudulent statements/impersonations to obtain information,",
+          "I comply with all applicable laws, including CAN-SPAM  ( if applicable) and",
+          "Comply with all relevant, posted privacy statements  and terms of use.”",
+          "{suggest contact legal}"
+        ]
+      }
+    }
+  ]
+}
