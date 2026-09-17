@@ -154,6 +154,14 @@ resource "aws_iam_policy" "ingestion_post_processor_policy" {
         Effect   = "Allow"
         Action   = ["iam:PassRole"]
         Resource = [aws_iam_role.scheduler_execution.arn]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+        ]
+        Resource = data.aws_ssm_parameter.kms_dynamodb_arn.value
       }
     ]
   })

@@ -8,14 +8,14 @@ role_arn: "arn:aws:iam::580118073904:role/TerraformRole"
 s3:
   website:
     name: "website"
-    bucket_namespace: "account-regional"
-    presigned_url: false
-    website_bucket: true
+    bucketNamespace: "account-regional"
+    presignedUrl: false
+    websiteBucket: true
   landingZone:
     name: "landing-zone"
-    bucket_namespace: "account-regional"
-    presigned_url: true
-    website_bucket: false
+    bucketNamespace: "account-regional"
+    presignedUrl: true
+    websiteBucket: false
 
 rdsAurora:
   bedrock:
@@ -86,9 +86,6 @@ bedrockKnowledgeBase:
   description: "Knowledge base for RAG application"
   auroraDbKey: "bedrock"
   s3DataSource: "landing-zone"
-  # Bedrock Foundation Model (for RAG generation - Amazon Nova Pro for low latency)
-  # Only specify the model ID - the ARN is constructed automatically using aws_region
-  bedrock_foundation_model_id: "amazon.nova-pro-v1:0"
   # Bedrock Embedding Model (Cohere Embed Multilingual v3 - supported with RDS vector store)
   # Only specify the model ID - the ARN is constructed automatically using aws_region
   bedrock_embedding_model_id: "cohere.embed-multilingual-v3"

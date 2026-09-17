@@ -18,7 +18,7 @@ resource "aws_lambda_function" "lambda" {
   timeout       = each.value.timeout
   memory_size   = try(each.value.memorySize, 128)
 
-  layers  = each.value.lambdaLayer.enabled ? local.config.lambdaLayer.enabled ? [aws_lambda_layer_version.lambda_layer[0].arn] : each.value.lambdaLayer.arns : []
+  layers  = each.value.lambdaLayer.enabled ? (local.config.lambdaLayer.enabled ? concat(aws_lambda_layer_version.lambda_layer[0].arn, each.value.lambdaLayer.arns) : each.value.lambdaLayer.arns) : local.config.lambdaLayer.enabled ? aws_lambda_layer_version.lambda_layer[0].arn : []
   runtime = each.value.runtime
 
   dynamic "environment" {
@@ -51,7 +51,7 @@ resource "aws_lambda_function" "lambda" {
     content {
       variables = {
         KNOWLEDGE_BASE_ID    = data.aws_ssm_parameter.knowledge_base_id.value
-        FOUNDATION_MODEL_ARN = "arn:aws:bedrock:${local.config.region}::foundation-model/${local.config.bedrockKnowledgeBase.bedrock_foundation_model_id}"
+        FOUNDATION_MODEL_ARN = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:inference-profile/${local.config.bedrockKnowledgeBase.bedrockInferenceProfileId}"
       }
     }
   }
