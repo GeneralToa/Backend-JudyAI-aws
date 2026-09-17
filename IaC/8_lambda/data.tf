@@ -59,3 +59,19 @@ data "aws_ssm_parameter" "data_source_id" {
 data "aws_ssm_parameter" "kms_dynamodb_arn" {
   name = "/${local.identifier}/kms/dynamodb-arn"
 }
+
+data "aws_ssm_parameter" "aurora_postgres_arn" {
+  name = "/${local.identifier}/aurora/postgres-arn"
+}
+
+data "aws_ssm_parameter" "kms_aurora_postgres_arn" {
+  name = "/${local.identifier}/kms/aurora-postgres-arn"
+}
+
+data "aws_ssm_parameter" "judy_ai_writer_secret_arn" {
+  name = "/${local.identifier}/secret-manager/judy-ai-writer-secret"
+}
+
+data "aws_ssm_parameter" "app_writer_secret_arn" {
+  name = "/${local.identifier}/secret-manager/app-writer-secret"
+}
