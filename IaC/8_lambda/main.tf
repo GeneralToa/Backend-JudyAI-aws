@@ -18,7 +18,7 @@ resource "aws_lambda_function" "lambda" {
   timeout       = each.value.timeout
   memory_size   = try(each.value.memorySize, 128)
 
-  layers  = each.value.lambdaLayer.enabled ? (local.config.lambdaLayer.enabled ? concat(aws_lambda_layer_version.lambda_layer[0].arn, each.value.lambdaLayer.arns) : each.value.lambdaLayer.arns) : local.config.lambdaLayer.enabled ? aws_lambda_layer_version.lambda_layer[0].arn : []
+  layers  = each.value.lambdaLayer.enabled ? (local.config.lambdaLayer.enabled ? concat(aws_lambda_layer_version.lambda_layer[0].arn, try(each.value.lambdaLayer.arns, [])) : try(each.value.lambdaLayer.arns, [])) : local.config.lambdaLayer.enabled ? aws_lambda_layer_version.lambda_layer[0].arn : []
   runtime = each.value.runtime
 
   dynamic "environment" {

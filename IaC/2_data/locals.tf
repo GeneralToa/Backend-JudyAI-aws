@@ -23,7 +23,7 @@ locals {
         s3Key = "${local.identifier}-${s3.name}"
         file  = file
       }
-      if s3.website_bucket == true
+      if s3.websiteBucket == true
     }
     if file != "config.js"
   ]...)

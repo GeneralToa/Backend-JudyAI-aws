@@ -28,10 +28,10 @@ rdsAurora:
     auto_minor_version_upgrade: true
     is_primary_cluster: true                  #Determines whether cluster is primary cluster with writer instance (set to false for global cluster and replica clusters)
     serverless_scaling_configuration:
-      min_capacity: 1
-      max_capacity: 1
+      min_capacity: 0.5
+      max_capacity: 5
     autoscaling_configuration:
-      enabled: false
+      enabled: true
       min_capacity: 1
       max_capacity: 5
     db_name: "ragdb" 
@@ -44,7 +44,7 @@ rdsAurora:
     secrets_recovery_window_in_days: 0        #For production, it is recommended to set this value to 7 or more. For development, it can be set to 0.
     cloudwatch_logs:
       - "postgresql"
-    proxy_enabled: false
+    proxy_enabled: true
 
 dynamoDB:
   - table_name: "documents"

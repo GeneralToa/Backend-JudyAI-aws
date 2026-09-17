@@ -18,3 +18,40 @@ resource "aws_secretsmanager_secret_version" "aurora_secret_version" {
     password        = random_password.aurora_random_password[each.key].result
   })
 }
+
+# ================== DB ROLE SECRETS ==================
+resource "aws_secretsmanager_secret" "judy_ai_writer_secret" {
+  name                    = "/rds/${local.identifier}-judy-ai-writer/credentials"
+  description             = "Credentials for judy_ai_writer PostgreSQL role"
+  kms_key_id              = aws_kms_key.rdskey_aurora[local.config.bedrockKnowledgeBase.auroraDbKey].arn
+  recovery_window_in_days = 0
+}
+
+resource "aws_secretsmanager_secret_version" "judy_ai_writer_secret_version" {
+  secret_id = aws_secretsmanager_secret.judy_ai_writer_secret.id
+  secret_string = jsonencode({
+    username        = "judy_ai_writer"
+    password        = random_password.judy_ai_writer_password.result
+    writer_endpoint = local.config.rdsAurora[local.config.bedrockKnowledgeBase.auroraDbKey].proxy_enabled ? module.rds_proxy[local.config.bedrockKnowledgeBase.auroraDbKey].db_proxy_endpoints["read_write"].endpoint : module.aurora[local.config.bedrockKnowledgeBase.auroraDbKey].cluster_endpoint
+    reader_endpoint = local.config.rdsAurora[local.config.bedrockKnowledgeBase.auroraDbKey].proxy_enabled ? module.rds_proxy[local.config.bedrockKnowledgeBase.auroraDbKey].db_proxy_endpoints["read_only"].endpoint : module.aurora[local.config.bedrockKnowledgeBase.auroraDbKey].cluster_reader_endpoint
+    database        = "judy_ai"
+  })
+}
+
+resource "aws_secretsmanager_secret" "app_writer_secret" {
+  name                    = "/rds/${local.identifier}-app-writer/credentials"
+  description             = "Credentials for app_writer PostgreSQL role"
+  kms_key_id              = aws_kms_key.rdskey_aurora[local.config.bedrockKnowledgeBase.auroraDbKey].arn
+  recovery_window_in_days = 0
+}
+
+resource "aws_secretsmanager_secret_version" "app_writer_secret_version" {
+  secret_id = aws_secretsmanager_secret.app_writer_secret.id
+  secret_string = jsonencode({
+    username        = "app_writer"
+    password        = random_password.app_writer_password.result
+    writer_endpoint = local.config.rdsAurora[local.config.bedrockKnowledgeBase.auroraDbKey].proxy_enabled ? module.rds_proxy[local.config.bedrockKnowledgeBase.auroraDbKey].db_proxy_endpoints["read_write"].endpoint : module.aurora[local.config.bedrockKnowledgeBase.auroraDbKey].cluster_endpoint
+    reader_endpoint = local.config.rdsAurora[local.config.bedrockKnowledgeBase.auroraDbKey].proxy_enabled ? module.rds_proxy[local.config.bedrockKnowledgeBase.auroraDbKey].db_proxy_endpoints["read_only"].endpoint : module.aurora[local.config.bedrockKnowledgeBase.auroraDbKey].cluster_reader_endpoint
+    database        = "app"
+  })
+}
