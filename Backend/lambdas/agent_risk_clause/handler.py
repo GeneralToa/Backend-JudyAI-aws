@@ -50,6 +50,7 @@ import json
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import boto3
 from botocore.config import Config
@@ -499,12 +500,24 @@ def analyse(contract_id, extraction_id):
         usage_total = {"inputTokens": 0, "outputTokens": 0}
         findings = []
 
-        for pass_name, builder, from_playbook in (
+        passes = (
             ("playbook", playbook_prompt, True),
             ("criteria", criteria_prompt, False),
-        ):
-            system, user = builder(contract_text)
-            text, usage = invoke_model(system, user)
+        )
+
+        # The two passes are independent calls, so run them concurrently. Under
+        # Bedrock throttling a single document has taken over two minutes
+        # sequentially, which would breach the 120s timeout the other Lambdas in
+        # this stack use. Overlapping them roughly halves the wall time.
+        with ThreadPoolExecutor(max_workers=len(passes)) as pool:
+            futures = {
+                name: pool.submit(invoke_model, *builder(contract_text))
+                for name, builder, _ in passes
+            }
+            results = {name: future.result() for name, future in futures.items()}
+
+        for pass_name, _, from_playbook in passes:
+            text, usage = results[pass_name]
             raw[pass_name] = text
             usage_total["inputTokens"] += usage.get("inputTokens", 0)
             usage_total["outputTokens"] += usage.get("outputTokens", 0)

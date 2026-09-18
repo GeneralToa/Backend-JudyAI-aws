@@ -1,0 +1,130 @@
+{
+  "purpose": "Validation corpus for the AI agents. See JAAPESWM-41.",
+  "document_count": 8,
+  "playbook_rules_covered": [
+    "access_to_customer_data",
+    "access_to_facilities",
+    "access_to_networks_and_equipment",
+    "access_to_personal_information",
+    "contact_lists",
+    "correspondence",
+    "online_marketing_activities",
+    "ownership",
+    "software_development",
+    "supplier_personnel",
+    "trademark_use"
+  ],
+  "documents": [
+    {
+      "id": "01_vendor_site_and_systems",
+      "file": "01_vendor_site_and_systems.md",
+      "title": "Vendor Agreement - on-site maintenance",
+      "base_template": "}[Judefly][Vendor Agreement].docx",
+      "scenarios_inserted": 2,
+      "expects_rules": [
+        "access_to_facilities",
+        "access_to_networks_and_equipment"
+      ],
+      "expects_criteria": [
+        "facility or access prerequisites"
+      ],
+      "note": null,
+      "chars": 14313
+    },
+    {
+      "id": "02_vendor_subcontractors_and_pii",
+      "file": "02_vendor_subcontractors_and_pii.md",
+      "title": "Vendor Agreement - subcontracted, handles employee records",
+      "base_template": "}[Judefly][Vendor Agreement].docx",
+      "scenarios_inserted": 2,
+      "expects_rules": [
+        "supplier_personnel",
+        "access_to_personal_information"
+      ],
+      "expects_criteria": [],
+      "note": null,
+      "chars": 14162
+    },
+    {
+      "id": "03_msa_marketing_and_brand",
+      "file": "03_msa_marketing_and_brand.md",
+      "title": "MSA - SEO and brand usage",
+      "base_template": "template.md",
+      "scenarios_inserted": 2,
+      "expects_rules": [
+        "online_marketing_activities",
+        "trademark_use"
+      ],
+      "expects_criteria": [],
+      "note": null,
+      "chars": 56019
+    },
+    {
+      "id": "04_msa_contacts_and_outreach",
+      "file": "04_msa_contacts_and_outreach.md",
+      "title": "MSA - customer lists and outbound contact",
+      "base_template": "template.md",
+      "scenarios_inserted": 2,
+      "expects_rules": [
+        "contact_lists",
+        "correspondence"
+      ],
+      "expects_criteria": [],
+      "note": null,
+      "chars": 55986
+    },
+    {
+      "id": "05_vendor_platform_and_training",
+      "file": "05_vendor_platform_and_training.md",
+      "title": "Vendor Agreement - core platform work and bespoke training",
+      "base_template": "}[Judefly][Vendor Agreement].docx",
+      "scenarios_inserted": 2,
+      "expects_rules": [
+        "software_development",
+        "ownership"
+      ],
+      "expects_criteria": [],
+      "note": null,
+      "chars": 14109
+    },
+    {
+      "id": "06_vendor_customer_content",
+      "file": "06_vendor_customer_content.md",
+      "title": "Vendor Agreement - access to customer uploaded content",
+      "base_template": "}[Judefly][Vendor Agreement].docx",
+      "scenarios_inserted": 1,
+      "expects_rules": [
+        "access_to_customer_data"
+      ],
+      "expects_criteria": [],
+      "note": null,
+      "chars": 13925
+    },
+    {
+      "id": "07_msa_dates_and_thresholds",
+      "file": "07_msa_dates_and_thresholds.md",
+      "title": "MSA - renewal window, escalating commission, PO threshold",
+      "base_template": "template.md",
+      "scenarios_inserted": 1,
+      "expects_rules": [],
+      "expects_criteria": [
+        "renewal or expiry dates",
+        "commission percentage that changes",
+        "monetary threshold"
+      ],
+      "note": null,
+      "chars": 56138
+    },
+    {
+      "id": "08_control_advisor_agreement",
+      "file": "08_control_advisor_agreement.md",
+      "title": "Advisor Agreement - unmodified control",
+      "base_template": "advisor-agreement.docx",
+      "scenarios_inserted": 0,
+      "expects_rules": [],
+      "expects_criteria": [],
+      "note": "Negative control. An advisory agreement engages almost none of the playbook. Findings here are mostly false positives, so this measures precision rather than recall.",
+      "chars": 15429
+    }
+  ]
+}
