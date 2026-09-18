@@ -116,6 +116,13 @@ resource "aws_iam_policy" "rag_policy" {
       {
         Effect = "Allow"
         Action = [
+          "bedrock:GetInferenceProfile"
+        ]
+        Resource = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:inference-profile/${local.config.bedrockKnowledgeBase.bedrockInferenceProfileId}"
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "kms:Decrypt",
           "kms:GenerateDataKey",
         ]
