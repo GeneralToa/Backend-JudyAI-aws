@@ -88,6 +88,12 @@ MAX_CONTRACT_CHARS = int(os.environ.get("MAX_CONTRACT_CHARS", "120000"))
 # Requires 002_risk_category_tracked_term.sql on the database.
 SOW_CATEGORIES = ("unusual_term", "missing_clause", "date_mismatch", "compliance_gap")
 CRITERIA_CATEGORIES = SOW_CATEGORIES + ("tracked_term",)
+# The playbook pass is defined by the contract *engaging* a rule's topic, so it
+# can never legitimately report a clause as missing - an absent topic cannot
+# engage anything. On the corpus every missing_clause it produced was noise
+# ("No Clause on Contact Lists" against an MSA that never touches contacts).
+# Genuine missing-clause detection belongs to the criteria pass.
+PLAYBOOK_CATEGORIES = ("unusual_term", "date_mismatch", "compliance_gap")
 VALID_CATEGORIES = set(CRITERIA_CATEGORIES)
 VALID_SEVERITIES = {"high", "medium", "low"}
 
@@ -368,10 +374,14 @@ there.
 Most contracts will match only one or two rules. Returning many findings is a sign you are
 reporting irrelevant topics.
 
+Never report a clause as absent or missing in this review. Every finding here must point at
+text that IS in the contract - the sentence that engages the rule's topic - and quote it in
+source_quote. If you cannot quote such a sentence, there is no finding.
+
 Set "playbook_rule_id" to the id of the rule that applies.
 Do not invent replacement wording; that is handled elsewhere.
 
-{finding_shape("playbook_rule_id")}
+{finding_shape("playbook_rule_id", categories=PLAYBOOK_CATEGORIES)}
 
 === PLAYBOOK RULES ===
 {chr(10).join(rule_lines)}
@@ -438,6 +448,12 @@ def normalise(finding, from_playbook):
 
     if category not in VALID_CATEGORIES:
         print(f"Dropping finding with invalid category {category!r}: {finding.get('title')!r}")
+        return None
+    # Enforced here as well as in the prompt: the schema block removes the option,
+    # but the guarantee should not rest on the model honouring it.
+    if from_playbook and category not in PLAYBOOK_CATEGORIES:
+        print(f"Dropping playbook finding with category {category!r} - the playbook pass "
+              f"cannot report absent clauses: {finding.get('title')!r}")
         return None
     if severity not in VALID_SEVERITIES:
         severity = "medium"
