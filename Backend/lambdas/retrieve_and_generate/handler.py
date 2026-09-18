@@ -65,11 +65,14 @@ def retrieve_from_knowledge_base(query: str) -> str:
         )
 
         if not has_citations:
+            print(f"NO_KB_RESULT: {output_text}")
             return f"NO_KB_RESULT: {output_text}"
 
+        print(f"KB_RESULT: {output_text}")
         return f"KB_RESULT: {output_text}"
 
     except Exception as e:
+        print(f"KB_ERROR: {str(e)}")
         return f"KB_ERROR: {str(e)}"
 
 
