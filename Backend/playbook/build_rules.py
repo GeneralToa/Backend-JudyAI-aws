@@ -135,46 +135,95 @@ def read_table(docx_path):
     return rows
 
 
+CONJUNCTION_WORD = re.compile(r"^(and|or)$", re.IGNORECASE)
+CLOSING_QUOTES = ("”", "’", '"')
+
+
+def is_note_fragment(para):
+    """A braced instruction such as {contact legal}, including one split across lines."""
+    stripped = para.strip()
+    return stripped.startswith("{") or stripped.endswith("}")
+
+
+def starts_new_scenario(para, previous):
+    """
+    Decide whether a paragraph after a condition opens the next scenario.
+
+    In this document the standard sentence is the only paragraph type that
+    carries the playbook's own quotation marks - it opens with a curly quote or
+    closes with one. Conditions do not.
+
+    A paragraph following a bare conjunction (AND / OR) is always the rest of
+    the condition, never a new standard sentence. The first version of this
+    function keyed on "Supplier will not ..." and so split the ownership rule's
+    condition in half at "AND / Supplier will not be creating custom training
+    materials" - leaving the model a rule that ended mid-sentence and never
+    mentioned custom materials at all.
+    """
+    if previous is not None and CONJUNCTION_WORD.match(previous.strip()):
+        return False
+    stripped = para.strip()
+    return stripped.startswith(("“", '"')) or stripped.endswith(CLOSING_QUOTES)
+
+
 def parse_triggers(paragraphs):
     """
-    Split column 2 into (default_clause, condition) pairs.
+    Split column 2 into (default_clause, condition, notes) scenarios.
 
     Layout is: a standard sentence, optionally "Because", then the condition
     that makes the standard sentence wrong. Sections with several scenarios
-    repeat the pattern, sometimes divided by a line of underscores.
+    repeat the pattern, sometimes divided by a line of underscores. Braced
+    instructions that appear in this column ({contact legal}) are kept as
+    notes rather than being glued into clause or condition text.
     """
     triggers = []
     current_clause = []
     current_condition = []
+    current_notes = []
     after_because = False
+    previous = None
 
     def flush():
         if current_clause or current_condition:
             triggers.append({
                 "default_clause": " ".join(current_clause).strip(),
                 "condition": " ".join(current_condition).strip() or None,
+                "notes": [n for n in current_notes if n],
             })
 
     for para in paragraphs:
         if SEPARATOR.match(para):
             flush()
-            current_clause, current_condition, after_because = [], [], False
+            current_clause, current_condition, current_notes = [], [], []
+            after_because, previous = False, None
             continue
 
         if BECAUSE.match(para):
             after_because = True
+            previous = para
             continue
 
-        if after_because:
-            # A new standard sentence starts the next scenario.
-            if para.startswith(("“", '"')) or para.lower().startswith("supplier will not"):
-                flush()
-                current_clause, current_condition = [para], []
-                after_because = False
-            else:
-                current_condition.append(para)
+        if is_note_fragment(para):
+            current_notes.append(para.strip("{} ").strip())
+            previous = para
+            continue
+
+        if CONJUNCTION_WORD.match(para.strip()):
+            if after_because:
+                current_condition.append(para.strip().lower())
+            previous = para
+            continue
+
+        if after_because and starts_new_scenario(para, previous):
+            flush()
+            current_clause, current_condition, current_notes = [para], [], []
+            after_because = False
+        elif after_because:
+            current_condition.append(para)
         else:
             current_clause.append(para)
+
+        previous = para
 
     flush()
     return [t for t in triggers if t["default_clause"] or t["condition"]]

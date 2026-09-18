@@ -339,16 +339,66 @@ def finding_shape(extra_field=None, categories=SOW_CATEGORIES):
 Return [] if there is nothing to report. No prose outside the JSON array."""
 
 
+# One-line description of what each rule is actually about, for the prompt's
+# "topic" line. The playbook's own section names are too bare to steer a model
+# ("ownership" — of what?), and one section's standard-position cell literally
+# reads "All". These are prompt-rendering aids only: they are never shown to
+# users and they are not the client's legal wording, which stays verbatim in
+# playbook_rules.json. Keeping them here rather than in the rules file keeps the
+# rules file a faithful record of the source document.
+RULE_SUMMARIES = {
+    "access_to_facilities":
+        "supplier personnel needing unescorted or badge access to company premises, "
+        "or working on site outside normal business hours",
+    "access_to_networks_and_equipment":
+        "supplier personnel being granted internal network access or issued company "
+        "laptops, phones or other hardware",
+    "access_to_personal_information":
+        "supplier handling personally identifiable, health or medical information about "
+        "company employees or other individuals",
+    "access_to_customer_data":
+        "supplier able to see information that company's own customers submitted or "
+        "uploaded into company's product or sent to company",
+    "supplier_personnel":
+        "services performed by subcontractors or independent contractors rather than the "
+        "supplier's own employees, or not under company's day-to-day supervision",
+    "ownership":
+        "ownership of training materials - course content, workbooks, slide decks and "
+        "presentations - where the supplier is a trainer or presenter, and especially "
+        "materials created specifically for company",
+    "software_development":
+        "supplier building or delivering software that company will incorporate into "
+        "its core systems, platform or products",
+    "trademark_use":
+        "supplier using company's name, logo, trademarks or application screenshots, "
+        "especially on the supplier's own website or in its marketing",
+    "online_marketing_activities":
+        "supplier providing online behaviour tracking, search engine optimisation or "
+        "link-building services",
+    "contact_lists":
+        "company giving the supplier lists of its current or prospective customers' "
+        "contact details, or the supplier supplying such lists to company",
+    "correspondence":
+        "supplier calling, emailing or otherwise contacting company's customers, "
+        "prospects or other people on company's behalf",
+}
+
+
 def playbook_prompt(contract_text):
     """Pass 1 - check the contract against the client's playbook rules."""
     rule_lines = []
     for rule in RULES["rules"]:
         conditions = [t["condition"] for t in rule["triggers"] if t.get("condition")]
+        standard = rule["triggers"][0]["default_clause"]
+        # A one-word cell such as "All" tells the model nothing; lean on the topic.
+        standard_line = (
+            f"  standard position: {standard[:400]}\n" if len(standard) >= 20 else ""
+        )
         rule_lines.append(
             f"- id: {rule['id']}\n"
-            f"  topic: {rule['section']}\n"
-            f"  standard position: {rule['triggers'][0]['default_clause'][:400]}\n"
-            f"  raise when: "
+            f"  topic: {RULE_SUMMARIES.get(rule['id'], rule['section'])}\n"
+            + standard_line
+            + "  raise when: "
             + ("; ".join(conditions) if conditions
                else "the contract engages this topic but departs from the standard position")
         )

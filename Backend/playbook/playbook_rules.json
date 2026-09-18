@@ -1,6 +1,6 @@
 {
   "source_document": "Playbook_part2_full.docx",
-  "generated_at": "2026-09-16T18:52:54Z",
+  "generated_at": "2026-09-18T17:33:45Z",
   "generated_by": "Backend/playbook/build_rules.py",
   "column_headers": [
     "Purchasing Agreement Section",
@@ -21,7 +21,8 @@
       "triggers": [
         {
           "default_clause": "Neither Supplier nor suppliers’ personnel require badge (unescorted) access to [ Company] facilities (including offices, data centers, and warehouses). Visitor access is sufficient for Supplier to perform the Services.",
-          "condition": "Unescorted access to [company] facilities is necessary in order for supplier to perform the Services"
+          "condition": "Unescorted access to [company] facilities is necessary in order for supplier to perform the Services",
+          "notes": []
         }
       ],
       "actions": [
@@ -63,7 +64,8 @@
       "triggers": [
         {
           "default_clause": "Neither Supplier nor Suppliers personnel requires access to any internal [ company] networks nor will any Supplier personnel be issued any [company] hardware( including laptops, phones, and tablets). Guest network access is sufficient for Supplier o perform the Services.”",
-          "condition": "Services cannot be preformed unless supplier is granted access to internal networks or is issued hardware"
+          "condition": "Services cannot be preformed unless supplier is granted access to internal networks or is issued hardware",
+          "notes": []
         }
       ],
       "actions": [
@@ -104,8 +106,11 @@
       "escalates_to_legal": true,
       "triggers": [
         {
-          "default_clause": "Supplier will not have access to personally identifiable information of any [ company] {contact legal} Supplier will not provide To  [Judy] the health or medical information of any individual",
-          "condition": null
+          "default_clause": "Supplier will not have access to personally identifiable information of any [ company] Supplier will not provide To  [Judy] the health or medical information of any individual",
+          "condition": null,
+          "notes": [
+            "contact legal"
+          ]
         }
       ],
       "actions": [
@@ -147,7 +152,8 @@
       "triggers": [
         {
           "default_clause": "Supplier will not have access to information provided to [company] by its customers, either directly, via email or othewise, or by the customer uploading the information in to judy account o product",
-          "condition": null
+          "condition": null,
+          "notes": []
         }
       ],
       "actions": [
@@ -181,7 +187,11 @@
       "triggers": [
         {
           "default_clause": "All services will be performed by employees of supplier",
-          "condition": "Supplier will utilize persons who are not the employees or Supplier in order to peform the Services( e.g subcontractor, independent contracts) {suggest contact legal professional} Supplier personnel will not be under the direct day to day supervision of [company]"
+          "condition": "Supplier will utilize persons who are not the employees or Supplier in order to peform the Services( e.g subcontractor, independent contracts) Supplier personnel will not be under the direct day to day supervision of [company]",
+          "notes": [
+            "suggest contact legal",
+            "professional"
+          ]
         }
       ],
       "actions": [
@@ -228,11 +238,11 @@
       "triggers": [
         {
           "default_clause": "All",
-          "condition": "Suppliers is a trainer, teacher or presenter using stock training materials, textbooks, pamphlets or presentations AND"
-        },
-        {
-          "default_clause": "Supplier will not be creating custom training Materials for [company] { any language section 5} {contact legal} Supplier is not a trainer Teacher or presenter Or Supplier is trainer/teacher presenter but will be creating customer training materials for [company]",
-          "condition": null
+          "condition": "Suppliers is a trainer, teacher or presenter using stock training materials, textbooks, pamphlets or presentations and Supplier will not be creating custom training Materials for [company] Supplier is not a trainer Teacher or presenter or Supplier is trainer/teacher presenter but will be creating customer training materials for [company]",
+          "notes": [
+            "any language section 5",
+            "contact legal"
+          ]
         }
       ],
       "actions": [
@@ -288,7 +298,8 @@
       "triggers": [
         {
           "default_clause": "“Supplier’s services do not include development or delivery of solutions for [company] core systems or products.”",
-          "condition": null
+          "condition": null,
+          "notes": []
         }
       ],
       "actions": [
@@ -334,11 +345,13 @@
       "triggers": [
         {
           "default_clause": "“supplier will not use [company] names, trademarks, or screenshots of any [company] application or services.”",
-          "condition": "Supplier will use [company’s] logo on materials produced for [company] or to advertise an event in which [company] is participating."
+          "condition": "Supplier will use [company’s] logo on materials produced for [company] or to advertise an event in which [company] is participating.",
+          "notes": []
         },
         {
           "default_clause": "“Supplier will not use [company] names  trademarks, or screenshots of any [company] applications or services",
-          "condition": "Supplier wants to use [companys] names, trademark, or screenshots on its website or in its marketing materials or for ay other purpose other than (i) to produce materials for [company] which contain the corporate logo or (ii) to advertise an event in which [company] is participating"
+          "condition": "Supplier wants to use [companys] names, trademark, or screenshots on its website or in its marketing materials or for ay other purpose other than (i) to produce materials for [company] which contain the corporate logo or (ii) to advertise an event in which [company] is participating",
+          "notes": []
         }
       ],
       "actions": [
@@ -405,11 +418,13 @@
       "triggers": [
         {
           "default_clause": "Supplier will not provide online behavior tracking",
-          "condition": "Supplier Services will include online behavior tracking."
+          "condition": "Supplier Services will include online behavior tracking.",
+          "notes": []
         },
         {
           "default_clause": "“Supplier will not provide search engine optimization or link-building services.”",
-          "condition": "Suppliers will provide SEO, link-building, or similar services."
+          "condition": "Suppliers will provide SEO, link-building, or similar services.",
+          "notes": []
         }
       ],
       "actions": [
@@ -465,11 +480,18 @@
       "triggers": [
         {
           "default_clause": "Supplier does not require [company] to provide any business or personal contact information of any third party.”",
-          "condition": "Supplier will need access to a list of current customers of [company] Supplier does not require[company] to provide any business or personal contact information of any third party.’ Supplier will need access to a list of prospective customers of [company]"
+          "condition": "Supplier will need access to a list of current customers of [company]",
+          "notes": []
+        },
+        {
+          "default_clause": "Supplier does not require[company] to provide any business or personal contact information of any third party.’",
+          "condition": "Supplier will need access to a list of prospective customers of [company]",
+          "notes": []
         },
         {
           "default_clause": "Supplier will not provide to [company] any business or personal contact information of any third party.”",
-          "condition": "Supplier will provide [company] with names, contact, information, email addresses, etc."
+          "condition": "Supplier will provide [company] with names, contact, information, email addresses, etc.",
+          "notes": []
         }
       ],
       "actions": [
@@ -521,11 +543,13 @@
       "triggers": [
         {
           "default_clause": "Supplier will not make telephone calls or send correspondence ( including emails) on [company] behalf",
-          "condition": "Supplier will call, email, or otherwise contact current or prospective [company] Customers"
+          "condition": "Supplier will call, email, or otherwise contact current or prospective [company] Customers",
+          "notes": []
         },
         {
           "default_clause": "Supplier will not make telephone calls or send correspondence (including emails) on [company] behalf.”",
-          "condition": "Supplier will call, email, or  otherwise contact other individuals on [company] behalf"
+          "condition": "Supplier will call, email, or  otherwise contact other individuals on [company] behalf",
+          "notes": []
         }
       ],
       "actions": [
