@@ -275,7 +275,11 @@ def page_markdown(document):
     for page in pages:
         markdown = (page.get("representation") or {}).get("markdown")
         if isinstance(markdown, str) and markdown.strip():
-            blocks.append(markdown.strip())
+            # Page markers let the agents cite a page number on every finding.
+            # Without them the joined text has no page boundaries, and
+            # source_page on contract_risks / contract_obligations could never
+            # be populated - which is what makes manual review practical.
+            blocks.append(f"[page {page.get('page_index', 0) + 1}]\n{markdown.strip()}")
 
     if blocks:
         return "\n\n".join(blocks)
