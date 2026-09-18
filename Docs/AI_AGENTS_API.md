@@ -174,7 +174,7 @@ If the agent has not succeeded yet, returns `409` with the current status rather
 | JSON | DB column (`judy_ai.contract_risks`) | Notes |
 |---|---|---|
 | `id` | `id` | |
-| `category` | `risk_category` | `unusualTerm` \| `missingClause` \| `dateMismatch` \| `complianceGap` — the SOW's four finding types |
+| `category` | `risk_category` | `unusualTerm` \| `missingClause` \| `dateMismatch` \| `complianceGap` \| `trackedTerm` — the SOW's four finding types, plus `trackedTerm` for any term carrying a date, deadline or figure a reviewer must see before signing (renewal windows, notice periods, commission steps, monetary thresholds). These are informational, not necessarily problems — render them distinctly from the risk categories. See `Backend/sql/002_risk_category_tracked_term.sql` |
 | `severity` | `severity` | `high` \| `medium` \| `low` |
 | `title` | `title` | Short label for a dashboard row |
 | `detail` | `detail` | What is wrong and why |

@@ -80,7 +80,15 @@ RULES_KEY = os.environ.get("RULES_KEY", "playbook/playbook_rules.json")
 
 MAX_CONTRACT_CHARS = int(os.environ.get("MAX_CONTRACT_CHARS", "120000"))
 
-VALID_CATEGORIES = {"unusual_term", "missing_clause", "date_mismatch", "compliance_gap"}
+# The SOW's four finding types, plus tracked_term for the client's own criterion
+# of "anything with a date or number attached" (renewal windows, notice periods,
+# commission steps, monetary thresholds). Those are not unusual, missing,
+# mismatched or non-compliant - they are things a reviewer must be shown - and
+# without a category of their own the model silently dropped every one.
+# Requires 002_risk_category_tracked_term.sql on the database.
+SOW_CATEGORIES = ("unusual_term", "missing_clause", "date_mismatch", "compliance_gap")
+CRITERIA_CATEGORIES = SOW_CATEGORIES + ("tracked_term",)
+VALID_CATEGORIES = set(CRITERIA_CATEGORIES)
 VALID_SEVERITIES = {"high", "medium", "low"}
 
 
@@ -298,7 +306,7 @@ def parse_findings(text):
 # =============================================================
 # Prompts
 # =============================================================
-def finding_shape(extra_field=None):
+def finding_shape(extra_field=None, categories=SOW_CATEGORIES):
     """
     The required JSON shape for findings.
 
@@ -306,11 +314,16 @@ def finding_shape(extra_field=None):
     field in prose alone does not work - the first version requested
     playbook_rule_id in the instructions but omitted it here, and the model
     returned every finding without it, so no playbook wording could be attached.
+
+    The same lesson applies to categories: the model will only ever report a
+    finding it can label. If the allowed set has no home for dated or numeric
+    terms, they are not reported at all.
     """
     extra = f'\n  "{extra_field}": <see instructions above>,' if extra_field else ""
+    allowed = " | ".join(f'"{c}"' for c in categories)
     return f"""Return ONLY a JSON array. Each element must be:
 {{{extra}
-  "risk_category": "unusual_term" | "missing_clause" | "date_mismatch" | "compliance_gap",
+  "risk_category": {allowed},
   "severity": "high" | "medium" | "low",
   "title": "short label, under 15 words",
   "detail": "what is wrong and why it matters, 1-3 sentences",
@@ -376,20 +389,33 @@ def criteria_prompt(contract_text):
         "You identify problems. You never rewrite contract language."
     )
 
-    user = f"""Review the contract below and flag:
+    user = f"""Review the contract below. Your FIRST and most important job is to surface every
+term a reviewer must be shown before signing because it carries a date, a deadline or a
+figure. Report each one as a separate finding with risk_category "tracked_term":
 
-1. Anything carrying a date or a number that someone must act on or track - expiration
-   dates, renewal windows, notice periods, commission or fee percentages, monetary
-   thresholds, term lengths. Flag dates that conflict with each other as "date_mismatch".
-2. Facility and access prerequisites - badge or unescorted access, supervision
-   requirements, permitted operating hours, security clearance, background checks, or
-   access to personal, health or customer information.
-3. Terms that are unusual or one-sided for a supplier agreement.
-4. Clauses a contract of this type would normally contain but this one does not.
+- expiration dates and term lengths
+- renewal windows and auto-renewal terms
+- notice periods
+- commission, fee or royalty percentages - especially any that change over time
+- monetary thresholds and limits, such as an amount above which approval or a purchase
+  order is required
+- payment terms and deadlines
 
-Do not report ordinary boilerplate that carries no obligation or deadline.
+For each tracked_term finding, put the exact date or figure in the title, and quote the
+sentence it appears in verbatim in source_quote. A term that changes over time (for
+example a rate that rises at an anniversary) is ONE finding that states both values.
 
-{finding_shape()}
+Only after that, also report:
+- "date_mismatch" - dates or periods in the contract that conflict with each other
+- facility and access prerequisites (badge or unescorted access, supervision, permitted
+  operating hours, security clearance, background checks, access to personal, health or
+  customer information) as "compliance_gap"
+- "unusual_term" - terms that are unusual or one-sided for a supplier agreement
+- "missing_clause" - a clause a contract of this type plainly needs and does not have
+
+Do not report ordinary boilerplate that carries no obligation, deadline or figure.
+
+{finding_shape(categories=CRITERIA_CATEGORIES)}
 
 === CONTRACT ===
 {contract_text}"""
