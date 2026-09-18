@@ -212,7 +212,7 @@ If the agent has not succeeded yet, returns `409` with the current status rather
 
 | JSON | DB column | Notes |
 |---|---|---|
-| `detectedTemplateType` | `template_detections.detected_template_type` | `sow` \| `purchaseAgreement` \| `msa` \| `unknown` — **pending Eean's confirmation** |
+| `detectedTemplateType` | `template_detections.detected_template_type` | `sow` \| `purchaseAgreement` \| `msa` \| `unknown` — **confirmed by Eean 2026-09-16** (MSA, PA, SOW; change orders hang off SOWs) |
 | `rationale` | `template_detections.rationale` | Why it classified that way |
 | `fields[].fieldType` | `contract_fields.field_type` | `signature` \| `initial` \| `date` \| `fullName` \| `title` \| `company` \| `text` |
 | `fields[].label` | `contract_fields.label` | What the document calls it |
@@ -222,8 +222,8 @@ If the agent has not succeeded yet, returns `409` with the current status rather
 | `fields[].isRequired` | `contract_fields.is_required` | |
 
 > `position` is normalized so the UI can overlay a box at any zoom level without knowing the
-> rendered page size. Lloyd — if you'd rather have absolute pixels or a different origin, tell
-> me now, this is easy to change before implementation and painful after.
+> rendered page size. **Confirmed with Lloyd 2026-09-18** — normalized 0–1, origin top-left,
+> resolution-independent. Locked; changing it now means changing both sides.
 
 ### 5.3 `summary` — Agent 3, pre-signing
 
@@ -284,7 +284,8 @@ Not available until the contract is signed. Returns `409` before then.
 
 > `dueDate` and `rawDateText` are a pair. When a contract says *"within 30 days of the Effective
 > Date"*, there may be no resolvable calendar date, but the wording still has to reach the user.
-> Please don't build UI that assumes `dueDate` is always present.
+> **Confirmed with Lloyd 2026-09-18**: `dueDate` is nullable and the UI falls back to
+> `rawDateText` for relative wording. Locked.
 
 ---
 
@@ -362,11 +363,12 @@ secret ARN as SSM parameters from `2_data` so `8_lambda` can consume them.
 
 ## 9. Open items
 
-| # | Item | Owner |
-|---|---|---|
-| 1 | Contract types are assumed to be `sow` / `purchaseAgreement` / `msa` | Eean — emailed, awaiting reply |
-| 2 | Who writes `app.contracts` on upload, and which fields the upload flow needs | Lloyd |
-| 3 | Whether `position` should be normalized or absolute pixels | Lloyd |
-| 4 | How signature completion signals Agent 4 (event shape / source) | Lloyd + Zuhair |
-| 5 | Postgres vs DynamoDB for AI results (this doc assumes Postgres) | Andres |
-| 6 | Whether these routes live on the existing `rag-app-prod-api` or a separate API | Andres |
+| # | Item | Owner | Status |
+|---|---|---|---|
+| 1 | Contract types `sow` / `purchaseAgreement` / `msa` | Eean | ✅ Confirmed 2026-09-16 |
+| 2 | Who writes `app.contracts` on upload, and which fields the upload flow needs | Lloyd | Open |
+| 3 | `position` normalized vs absolute pixels | Lloyd | ✅ Normalized, confirmed 2026-09-18 |
+| 4 | How signature completion signals Agent 4 (event shape / source) | Lloyd + Zuhair | Open |
+| 5 | Postgres vs DynamoDB for AI results | Andres | ✅ Postgres — schema applied 2026-09-17 |
+| 6 | Whether these routes live on the existing `rag-app-prod-api` or a separate API | Andres | Open |
+| 7 | `dueDate` nullable with `rawDateText` fallback | Lloyd | ✅ Confirmed 2026-09-18 |
