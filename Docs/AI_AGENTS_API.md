@@ -324,6 +324,27 @@ Workers are split from the API handler so that no HTTP request can hit the 29-se
 | `agent-summary` | Agent 3 | same |
 | `agent-obligation-tracking` | Agent 4 | signature completion event |
 
+**Where field coordinates come from (Andres, this affects IaC).** `document-extraction` must
+run BDA with the project `judy-ai-contract-extraction`
+(`arn:aws:bedrock:us-west-2:580118073904:data-automation-project/3582b7d2b55a`), not the
+public default. That project has bounding boxes enabled, so its `result.json` carries a
+normalized box for every printed line. `agent-template-prepopulation` reads that file back
+from the BDA output bucket (`BDA_OUTPUT_BUCKET` env var, `s3:GetObject` on the `bda-output/`
+prefix) and anchors each field to its label's box. With the public-default project the
+agent still runs, but every `position` is `null`. The project was created with the CLI
+(2026-09-22) and should move into Terraform if the provider supports
+`aws_bedrock_data_automation_project`; otherwise keep the ARN in SSM like the others.
+Its standard-output configuration, for reproduction:
+
+```json
+{"document": {
+  "extraction": {"granularity": {"types": ["PAGE", "ELEMENT", "LINE"]},
+                 "boundingBox": {"state": "ENABLED"}},
+  "generativeField": {"state": "DISABLED"},
+  "outputFormat": {"textFormat": {"types": ["MARKDOWN"]},
+                   "additionalFileFormat": {"state": "DISABLED"}}}}
+```
+
 ---
 
 ## 8. Routes to add — drop-in for `IaC/9_apigateway/config/prod.yaml`
