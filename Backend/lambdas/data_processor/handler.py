@@ -127,7 +127,8 @@ def lambda_handler(event, context):
     """Route event to appropriate handler based on source."""
     print(f"Event received: {json.dumps(event)[:500]}")
 
-    if "httpMethod" in event:
+    # Support both API Gateway REST (v1: httpMethod) and HTTP API (v2: routeKey)
+    if "httpMethod" in event or "routeKey" in event:
         return handle_api_gateway(event)
 
     if "Records" in event:
@@ -253,8 +254,17 @@ def has_running_job(knowledge_base_id, data_source_id):
 # Handler: API Gateway
 # =============================================================
 def handle_api_gateway(event):
-    http_method = event["httpMethod"]
-    resource = event.get("resource", "")
+    # Support both REST API (v1) and HTTP API (v2) event formats
+    if "routeKey" in event:
+        # v2: routeKey is like "GET /files" or "DELETE /files/{documentId}"
+        route_key = event.get("routeKey", "")
+        parts = route_key.split(" ", 1)
+        http_method = parts[0] if parts else ""
+        resource = parts[1] if len(parts) > 1 else ""
+    else:
+        # v1: httpMethod and resource are separate fields
+        http_method = event.get("httpMethod", "")
+        resource = event.get("resource", "")
 
     if http_method == "GET" and resource == "/files":
         return handle_list_files(event)
@@ -308,7 +318,8 @@ def handle_delete_file(event):
     2. Set kb_status='deleting' (orphan - no job_id yet)
     3. Try to start re-sync; if conflict, post-processor will handle later
     """
-    document_id = event["pathParameters"]["document_id"]
+    path_params = event.get("pathParameters") or {}
+    document_id = path_params.get("document_id") or path_params.get("documentId", "")
 
     try:
         result = dynamodb_client.get_item(
