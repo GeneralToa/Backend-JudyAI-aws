@@ -21,6 +21,27 @@ resource "aws_iam_policy" "data_upload_policy" {
           "kms:GenerateDataKey",
         ]
         Resource = data.aws_ssm_parameter.kms_dynamodb_arn.value
+      },
+      {
+        Effect = "Allow"
+        Action = ["ssm:GetParameter"]
+        Resource = [
+          data.aws_ssm_parameter.aurora_postgres_arn.arn,
+          data.aws_ssm_parameter.kms_aurora_postgres_arn.arn,
+          data.aws_ssm_parameter.app_writer_secret_arn.arn
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "rds-data:ExecuteStatement"
+        ]
+        Resource = data.aws_ssm_parameter.aurora_postgres_arn.value
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = data.aws_ssm_parameter.app_writer_secret_arn.value
       }
     ]
   })
