@@ -9,18 +9,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const navUpload = document.getElementById("nav-upload");
     const navChat = document.getElementById("nav-chat");
     const navFiles = document.getElementById("nav-files");
+    const navContracts = document.getElementById("nav-contracts");
     const sectionUpload = document.getElementById("section-upload");
     const sectionChat = document.getElementById("section-chat");
     const sectionFiles = document.getElementById("section-files");
+    const sectionContracts = document.getElementById("section-contracts");
     const btnLogout = document.getElementById("btn-logout");
 
     function setActiveSection(sectionName) {
         navUpload.classList.remove("active");
         navChat.classList.remove("active");
         navFiles.classList.remove("active");
+        if (navContracts) navContracts.classList.remove("active");
         sectionUpload.classList.remove("active");
         sectionChat.classList.remove("active");
         sectionFiles.classList.remove("active");
+        if (sectionContracts) sectionContracts.classList.remove("active");
 
         if (sectionName === "upload") {
             navUpload.classList.add("active");
@@ -33,12 +37,21 @@ document.addEventListener("DOMContentLoaded", () => {
             navFiles.classList.add("active");
             sectionFiles.classList.add("active");
             loadFiles();
+        } else if (sectionName === "contracts") {
+            if (navContracts) navContracts.classList.add("active");
+            if (sectionContracts) {
+                sectionContracts.classList.add("active");
+                // Trigger load — dispatch click on refresh button
+                const refreshBtn = document.getElementById("btn-refresh-contracts");
+                if (refreshBtn) refreshBtn.click();
+            }
         }
     }
 
     navUpload.addEventListener("click", () => setActiveSection("upload"));
     navChat.addEventListener("click", () => setActiveSection("chat"));
     navFiles.addEventListener("click", () => setActiveSection("files"));
+    if (navContracts) navContracts.addEventListener("click", () => setActiveSection("contracts"));
 
     // Logout with confirmation
     const logoutModal = document.getElementById("logout-modal");
@@ -755,3 +768,375 @@ document.addEventListener("DOMContentLoaded", () => {
         return div.innerHTML;
     }
 });
+
+
+// =============================================================
+// Contracts Section — Signature Workflow
+// =============================================================
+
+(function () {
+    // Utility functions (local to this module)
+    function escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function showToast(message, type = "info") {
+        const container = document.getElementById("toast-container");
+        if (!container) return;
+        const toast = document.createElement("div");
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.style.opacity = "0";
+            toast.style.transform = "translateX(20px)";
+            toast.style.transition = "all 0.3s ease";
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    function formatDate(iso) {
+        if (!iso) return "";
+        return new Date(iso).toLocaleDateString("en-US", {
+            year: "numeric", month: "short", day: "numeric"
+        });
+    }
+
+    // Wait for DOM to be ready
+    document.addEventListener("DOMContentLoaded", () => {
+        if (!isAuthenticated()) return;
+
+        const navContracts = document.getElementById("nav-contracts");
+        const sectionContracts = document.getElementById("section-contracts");
+
+        if (!navContracts) return;
+
+        document.getElementById("btn-refresh-contracts").addEventListener("click", loadContracts);
+
+        // --- State ---
+        let selectedContractId = null;
+        let selectedContractName = null;
+
+        // =============================================================
+        // Load Contracts (from DynamoDB via GET /files, mapped to contracts)
+        // =============================================================
+        async function loadContracts() {
+            const list = document.getElementById("contracts-list");
+            list.innerHTML = `<div class="files-loading"><div class="loading-spinner"></div><span>Loading contracts...</span></div>`;
+            console.log("loadContracts called");
+
+            try {
+                const res = await fetch(`${CONFIG.API_BASE_URL}/files`, {
+                    headers: { Authorization: getIdToken() },
+                });
+                console.log("API response status:", res.status);
+                if (!res.ok) throw new Error("Failed to load contracts");
+                const data = await res.json();
+                console.log("Files data:", data);
+                renderContracts(data.files || []);
+            } catch (err) {
+                console.error("loadContracts error:", err);
+                list.innerHTML = `<div class="files-empty">Failed to load contracts: ${err.message}</div>`;
+            }
+        }
+
+        function renderContracts(files) {
+            const list = document.getElementById("contracts-list");
+            console.log("renderContracts called, list element:", list, "files count:", files.length);
+            if (!list) {
+                console.error("contracts-list element not found!");
+                return;
+            }
+            if (!files.length) {
+                list.innerHTML = `<div class="files-empty">No contracts uploaded yet.</div>`;
+                return;
+            }
+
+            list.innerHTML = files.map(f => {
+                const status = f.contract_status || "uploaded";
+                const contractId = f.contract_id || "";
+                const docId = f.document_id || "";
+                const hasContractId = !!contractId;
+
+                return `
+                <div class="file-item">
+                    <div class="file-info">
+                        <div class="file-name">${escapeHtml(f.document_name)}</div>
+                        <div class="file-meta">${f.uploaded_by} · ${formatDate(f.upload_date)}</div>
+                    </div>
+                    <div class="contract-actions">
+                        <span class="contract-status ${status}">${status.replace(/_/g, " ")}</span>
+                        ${hasContractId
+                            ? `<button class="btn-primary btn-sm btn-route" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}">Send for Signature</button>`
+                            : `<span style="font-size:11px;color:#aaa;font-style:italic;">Re-upload to enable signing</span>`
+                        }
+                    </div>
+                </div>`;
+            }).join("");
+
+            // Attach button events
+            list.querySelectorAll(".btn-route").forEach(btn => {
+                btn.addEventListener("click", () => openRouteModal(btn.dataset.contractId, btn.dataset.filename));
+            });
+            list.querySelectorAll(".btn-sign").forEach(btn => {
+                btn.addEventListener("click", () => openSignatureModal(btn.dataset.contractId, btn.dataset.filename));
+            });
+            list.querySelectorAll(".btn-signers").forEach(btn => {
+                btn.addEventListener("click", () => openSignersModal(btn.dataset.contractId, btn.dataset.filename));
+            });
+        }
+
+        function formatDate(iso) {
+            if (!iso) return "";
+            return new Date(iso).toLocaleDateString();
+        }
+
+        // =============================================================
+        // Route Modal — Assign Signers
+        // =============================================================
+        const routeModal = document.getElementById("route-modal");
+        const routeModalFilename = document.getElementById("route-modal-filename");
+        const routeModalCancel = document.getElementById("route-modal-cancel");
+        const routeModalConfirm = document.getElementById("route-modal-confirm");
+
+        function openRouteModal(contractId, filename) {
+            selectedContractId = contractId;
+            selectedContractName = filename;
+            routeModalFilename.textContent = filename;
+            document.getElementById("signer-1-email").value = "";
+            document.getElementById("signer-2-email").value = "";
+            routeModal.classList.remove("hidden");
+        }
+
+        routeModalCancel.addEventListener("click", () => routeModal.classList.add("hidden"));
+        routeModal.addEventListener("click", e => { if (e.target === routeModal) routeModal.classList.add("hidden"); });
+
+        routeModalConfirm.addEventListener("click", async () => {
+            const signer1 = document.getElementById("signer-1-email").value.trim();
+            const signer2 = document.getElementById("signer-2-email").value.trim();
+
+            if (!signer1 || !signer2) {
+                showToast("Please provide both signer emails", "error");
+                return;
+            }
+
+            routeModalConfirm.disabled = true;
+            routeModalConfirm.textContent = "Sending...";
+
+            try {
+                const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${selectedContractId}/route`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: getIdToken(),
+                    },
+                    body: JSON.stringify({
+                        signers: [
+                            { email: signer1, role: "supplier" },
+                            { email: signer2, role: "company" },
+                        ],
+                    }),
+                });
+
+                if (!res.ok) throw new Error("Failed to route contract");
+                routeModal.classList.add("hidden");
+                showToast("Contract sent for signature!", "success");
+                loadContracts();
+            } catch (err) {
+                showToast(`Error: ${err.message}`, "error");
+            } finally {
+                routeModalConfirm.disabled = false;
+                routeModalConfirm.textContent = "Send for Signature";
+            }
+        });
+
+        // =============================================================
+        // Signature Modal — Draw or Type
+        // =============================================================
+        const signatureModal = document.getElementById("signature-modal");
+        const signatureModalFilename = document.getElementById("signature-modal-filename");
+        const signatureModalCancel = document.getElementById("signature-modal-cancel");
+        const signatureModalConfirm = document.getElementById("signature-modal-confirm");
+        const drawCanvas = document.getElementById("signature-canvas");
+        const typeCanvas = document.getElementById("signature-type-canvas");
+        const drawCtx = drawCanvas.getContext("2d");
+        const typeCtx = typeCanvas.getContext("2d");
+        let isDrawing = false;
+        let activeTab = "draw";
+        let selectedFont = "Dancing Script";
+
+        function openSignatureModal(contractId, filename) {
+            selectedContractId = contractId;
+            selectedContractName = filename;
+            signatureModalFilename.textContent = filename;
+            clearDrawCanvas();
+            clearTypeCanvas();
+            signatureModal.classList.remove("hidden");
+        }
+
+        signatureModalCancel.addEventListener("click", () => signatureModal.classList.add("hidden"));
+        signatureModal.addEventListener("click", e => { if (e.target === signatureModal) signatureModal.classList.add("hidden"); });
+
+        // Tabs
+        document.querySelectorAll(".sig-tab").forEach(tab => {
+            tab.addEventListener("click", () => {
+                document.querySelectorAll(".sig-tab").forEach(t => t.classList.remove("active"));
+                tab.classList.add("active");
+                activeTab = tab.dataset.tab;
+                document.getElementById("sig-tab-draw").classList.toggle("hidden", activeTab !== "draw");
+                document.getElementById("sig-tab-type").classList.toggle("hidden", activeTab !== "type");
+            });
+        });
+
+        // Draw canvas
+        function clearDrawCanvas() {
+            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            drawCtx.fillStyle = "#fff";
+            drawCtx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+        }
+
+        document.getElementById("btn-clear-signature").addEventListener("click", clearDrawCanvas);
+
+        drawCanvas.addEventListener("mousedown", e => { isDrawing = true; drawCtx.beginPath(); drawCtx.moveTo(...getPos(e, drawCanvas)); });
+        drawCanvas.addEventListener("mousemove", e => { if (!isDrawing) return; drawCtx.lineTo(...getPos(e, drawCanvas)); drawCtx.strokeStyle = "#1a1a2e"; drawCtx.lineWidth = 2; drawCtx.lineCap = "round"; drawCtx.stroke(); });
+        drawCanvas.addEventListener("mouseup", () => isDrawing = false);
+        drawCanvas.addEventListener("mouseleave", () => isDrawing = false);
+
+        // Touch support
+        drawCanvas.addEventListener("touchstart", e => { e.preventDefault(); isDrawing = true; drawCtx.beginPath(); drawCtx.moveTo(...getPos(e.touches[0], drawCanvas)); });
+        drawCanvas.addEventListener("touchmove", e => { e.preventDefault(); if (!isDrawing) return; drawCtx.lineTo(...getPos(e.touches[0], drawCanvas)); drawCtx.strokeStyle = "#1a1a2e"; drawCtx.lineWidth = 2; drawCtx.lineCap = "round"; drawCtx.stroke(); });
+        drawCanvas.addEventListener("touchend", () => isDrawing = false);
+
+        function getPos(e, canvas) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return [(e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY];
+        }
+
+        // Type signature
+        const sigTextInput = document.getElementById("signature-text");
+
+        function clearTypeCanvas() {
+            typeCtx.clearRect(0, 0, typeCanvas.width, typeCanvas.height);
+            typeCtx.fillStyle = "#fff";
+            typeCtx.fillRect(0, 0, typeCanvas.width, typeCanvas.height);
+        }
+
+        function renderTypeSignature() {
+            clearTypeCanvas();
+            const text = sigTextInput.value.trim();
+            if (!text) return;
+            typeCtx.fillStyle = "#fff";
+            typeCtx.fillRect(0, 0, typeCanvas.width, typeCanvas.height);
+            typeCtx.fillStyle = "#1a1a2e";
+            typeCtx.font = `48px '${selectedFont}', cursive`;
+            typeCtx.textAlign = "center";
+            typeCtx.textBaseline = "middle";
+            typeCtx.fillText(text, typeCanvas.width / 2, typeCanvas.height / 2);
+        }
+
+        sigTextInput.addEventListener("input", renderTypeSignature);
+
+        document.querySelectorAll(".sig-font-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                document.querySelectorAll(".sig-font-btn").forEach(b => b.classList.remove("active"));
+                btn.classList.add("active");
+                selectedFont = btn.dataset.font;
+                renderTypeSignature();
+            });
+        });
+
+        // Sign confirm
+        signatureModalConfirm.addEventListener("click", async () => {
+            let signatureData;
+
+            if (activeTab === "draw") {
+                signatureData = drawCanvas.toDataURL("image/png");
+            } else {
+                if (!sigTextInput.value.trim()) {
+                    showToast("Please type your name", "error");
+                    return;
+                }
+                signatureData = typeCanvas.toDataURL("image/png");
+            }
+
+            signatureModalConfirm.disabled = true;
+            signatureModalConfirm.textContent = "Signing...";
+
+            try {
+                const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${selectedContractId}/sign`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: getIdToken(),
+                    },
+                    body: JSON.stringify({ signatureData }),
+                });
+
+                if (!res.ok) throw new Error("Failed to sign contract");
+                const data = await res.json();
+                signatureModal.classList.add("hidden");
+
+                if (data.status === "signed") {
+                    showToast("Contract fully signed!", "success");
+                } else {
+                    showToast(`Signature recorded. ${data.pendingSigners} signer(s) remaining.`, "success");
+                }
+                loadContracts();
+            } catch (err) {
+                showToast(`Error: ${err.message}`, "error");
+            } finally {
+                signatureModalConfirm.disabled = false;
+                signatureModalConfirm.textContent = "Sign";
+            }
+        });
+
+        // =============================================================
+        // Signers Status Modal
+        // =============================================================
+        const signersModal = document.getElementById("signers-modal");
+        const signersModalFilename = document.getElementById("signers-modal-filename");
+        const signersModalClose = document.getElementById("signers-modal-close");
+
+        signersModalClose.addEventListener("click", () => signersModal.classList.add("hidden"));
+        signersModal.addEventListener("click", e => { if (e.target === signersModal) signersModal.classList.add("hidden"); });
+
+        async function openSignersModal(contractId, filename) {
+            signersModalFilename.textContent = filename;
+            document.getElementById("signers-list").innerHTML = `<div class="files-loading"><div class="loading-spinner"></div><span>Loading...</span></div>`;
+            signersModal.classList.remove("hidden");
+
+            try {
+                const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/signers`, {
+                    headers: { Authorization: getIdToken() },
+                });
+                if (!res.ok) throw new Error("Failed to load signers");
+                const data = await res.json();
+                renderSignersList(data.signers || []);
+            } catch (err) {
+                document.getElementById("signers-list").innerHTML = `<div class="files-empty">Failed to load signers: ${err.message}</div>`;
+            }
+        }
+
+        function renderSignersList(signers) {
+            const list = document.getElementById("signers-list");
+            if (!signers.length) {
+                list.innerHTML = `<div class="files-empty">No signers assigned yet.</div>`;
+                return;
+            }
+            list.innerHTML = signers.map(s => `
+                <div class="signer-item">
+                    <div class="signer-item-info">
+                        <div class="signer-item-email">${escapeHtml(s.email)}</div>
+                        <div class="signer-item-role">${s.role} · Order ${s.order}</div>
+                    </div>
+                    <span class="signer-item-status ${s.status}">${s.status}</span>
+                </div>
+            `).join("");
+        }
+
+    }); // end DOMContentLoaded
+})();

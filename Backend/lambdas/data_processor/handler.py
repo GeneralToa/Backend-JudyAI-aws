@@ -296,6 +296,7 @@ def handle_list_files(event):
                 continue
             files.append({
                 "document_id": item["document_id"]["S"],
+                "contract_id": item.get("contract_id", {}).get("S", ""),
                 "document_name": item["document_name"]["S"],
                 "upload_date": item.get("upload_date", {}).get("S", ""),
                 "file_size_kb": float(item.get("file_size_kb", {}).get("N", "0")),
