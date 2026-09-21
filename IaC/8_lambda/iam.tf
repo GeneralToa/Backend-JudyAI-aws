@@ -20,11 +20,14 @@ resource "aws_iam_policy" "data_upload_policy" {
           "kms:Decrypt",
           "kms:GenerateDataKey",
         ]
-        Resource = data.aws_ssm_parameter.kms_dynamodb_arn.value
+        Resource = [
+          data.aws_ssm_parameter.kms_dynamodb_arn.value,
+          data.aws_ssm_parameter.kms_aurora_postgres_arn.value
+        ]
       },
       {
         Effect = "Allow"
-        Action = ["ssm:GetParameter"]
+        Action = ["ssm:GetParameters"]
         Resource = [
           data.aws_ssm_parameter.aurora_postgres_arn.arn,
           data.aws_ssm_parameter.kms_aurora_postgres_arn.arn,
