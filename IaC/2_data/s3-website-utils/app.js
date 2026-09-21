@@ -102,10 +102,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function uploadFile(file) {
-        const MAX_FILE_SIZE = 15 * 1024 * 1024;
+        const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
         if (file.size > MAX_FILE_SIZE) {
-            addStatus(`${file.name}: exceeds 15 MB limit (${(file.size / 1024 / 1024).toFixed(1)} MB)`, "error");
+            addStatus(`${file.name}: exceeds 10 MB limit (${(file.size / 1024 / 1024).toFixed(1)} MB)`, "error");
             return;
         }
 

@@ -20,7 +20,7 @@ Judy.ai Knowledge Base is an AI-powered document analysis platform. Upload PDF o
 
 ### Key Features
 
-- Document upload (PDF, DOCX, up to 15 MB)
+- Document upload (PDF, DOCX, TXT, up to 10 MB)
 - AI chatbot powered by Amazon Bedrock Knowledge Bases
 - Multi-session chat (create and switch between conversations)
 - File management with knowledge base ingestion status tracking
@@ -75,7 +75,7 @@ https://<distribution-id>.cloudfront.net
    - **Drag and drop** files directly onto the drop zone
    - Click **Browse Files** to select files from your computer
 3. Supported formats: **PDF**, **DOCX**
-4. Maximum file size: **15 MB**
+4. Maximum file size: **10 MB**
 5. After upload, the file is automatically queued for processing into the Knowledge Base
 
 ### Upload Status Indicators
