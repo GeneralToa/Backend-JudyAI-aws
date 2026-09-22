@@ -324,6 +324,22 @@ Workers are split from the API handler so that no HTTP request can hit the 29-se
 | `agent-summary` | Agent 3 | same |
 | `agent-obligation-tracking` | Agent 4 | signature completion event |
 
+### 7.1 Deployment spec per function (for IaC)
+
+Only `analysis-api` is behind API Gateway. Everything else is event-driven or invoked
+function-to-function, so it gets **no route**.
+
+| Function | Trigger | Timeout / memory | Environment variables | IAM beyond logs |
+|---|---|---|---|---|
+| `document-extraction` | Object created under `uploads/` in the landing-zone bucket. That prefix already feeds the ingestion queue, so fan out rather than share the queue: EventBridge S3 notifications + a rule, or S3 → SNS → two queues. Handler expects the SQS-wrapped S3 event shape; an EventBridge shape can be added on request. | 300 s / 512 MB | `AURORA_CLUSTER_ARN`, `AURORA_SECRET_ARN` (**judy-ai-writer** secret, not the master), `AURORA_DATABASE=ragdb`, `BDA_PROJECT_ARN` = `arn:aws:bedrock:us-west-2:580118073904:data-automation-project/3582b7d2b55a`, `BDA_PROFILE_ARN` = `arn:aws:bedrock:us-west-2:580118073904:data-automation-profile/us.data-automation-v1`, `BDA_OUTPUT_BUCKET` = landing-zone bucket, `BDA_OUTPUT_PREFIX=bda-output`, `PRE_SIGNING_AGENT_ARNS` (comma-separated agent function ARNs), optional `MAX_WAIT_SECONDS` (default 240) | `bedrock:InvokeDataAutomationAsync`, `bedrock:GetDataAutomationStatus` (project, profile and the invocation ARN pattern); `s3:GetObject` on `uploads/*`, `s3:GetObject`/`s3:PutObject`/`s3:ListBucket` on `bda-output/*`; `rds-data:ExecuteStatement`; `secretsmanager:GetSecretValue` on the judy-ai secret; `lambda:InvokeFunction` on the three pre-signing agents |
+| `agent-risk-clause` | Async invoke from `document-extraction`, or from `analysis-api` on re-run. Payload `{"contract_id","extraction_id"}` | 300 s / 512 MB | `AURORA_*` (as above), `MODEL_ID=us.amazon.nova-pro-v1:0`, `PROMPT_VERSION` (optional). Package with `source_dir` so `playbook_rules.json` ships next to the handler (copy it from `Backend/playbook/` in the build; the in-tree copy is gitignored). Fallback: `RULES_BUCKET` + `RULES_KEY` to read it from S3. | `bedrock:InvokeModel` **and** `bedrock:GetInferenceProfile` on the Nova Pro inference profile *and* the underlying foundation-model ARNs (both are checked); `rds-data:ExecuteStatement`; `secretsmanager:GetSecretValue` on the judy-ai secret |
+| `agent-template-prepopulation` | Same as above | 300 s / 512 MB | `AURORA_*`, `MODEL_ID`, `BDA_OUTPUT_BUCKET` (to read the extraction's `result.json` for line positions) | As risk agent, plus `s3:GetObject` on `bda-output/*` |
+| `agent-summary` | Same as above | 300 s / 512 MB | `AURORA_*`, `MODEL_ID` | As risk agent |
+| `agent-obligation-tracking` | Async invoke from the signature-workflow Lambda when the last signer confirms. Payload `{"contract_id","trigger":"signature_completed"}`. Function name `rag-app-prod-agent-obligation-tracking`; the signature Lambda reads it from `OBLIGATION_AGENT_FUNCTION_NAME` and needs `lambda:InvokeFunction` on it. | 300 s / 512 MB | `AURORA_*`, `MODEL_ID` | As risk agent |
+| `analysis-api` | API Gateway, the three routes in §8 | 29 s / 256 MB | `AURORA_*`, the four agent function ARNs | `rds-data:ExecuteStatement`; `secretsmanager:GetSecretValue`; `lambda:InvokeFunction` on the four agents |
+
+All of these run **outside the VPC** (Data API), like the four existing functions.
+
 **Where field coordinates come from (Andres, this affects IaC).** `document-extraction` must
 run BDA with the project `judy-ai-contract-extraction`
 (`arn:aws:bedrock:us-west-2:580118073904:data-automation-project/3582b7d2b55a`), not the
