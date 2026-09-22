@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Great+Vibes&family=Pacifico&family=Caveat:wght@700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/svg+xml" href="logo-color.svg">
 </head>
 <body>
@@ -69,6 +70,18 @@
                             <polyline points="13 2 13 9 20 9"/>
                         </svg>
                         Files
+                    </button>
+                </li>
+                <li>
+                    <button id="nav-contracts" class="nav-btn">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                            <polyline points="10 9 9 9 8 9"/>
+                        </svg>
+                        Contracts
                     </button>
                 </li>
             </ul>
@@ -161,8 +174,7 @@
             </section>
 
             <!-- Files Section -->
-            <section id="section-files" class="section">
-                <div class="section-header">
+            <section id="section-files" class="section">                <div class="section-header">
                     <div class="section-title-area">
                         <h1>Uploaded Files</h1>
                         <p class="section-subtitle">Right-click on a file to manage it.</p>
@@ -192,7 +204,105 @@
                     </div>
                 </div>
             </section>
+
+            <!-- Contracts Section -->
+            <section id="section-contracts" class="section">
+                <div class="section-header">
+                    <div class="section-title-area">
+                        <h1>Contracts</h1>
+                        <p class="section-subtitle">Manage contract signing workflows.</p>
+                    </div>
+                    <div class="section-actions">
+                        <button id="btn-refresh-contracts" class="btn-secondary" title="Refresh">
+                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="23 4 23 10 17 10"/>
+                                <polyline points="1 20 1 14 7 14"/>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                            </svg>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+                <div id="contracts-list" class="files-list">
+                    <div class="files-loading">
+                        <div class="loading-spinner"></div>
+                        <span>Loading contracts...</span>
+                    </div>
+                </div>
+            </section>
         </main>
+    </div>
+
+    <!-- Route Contract Modal (assign signers) -->
+    <div id="route-modal" class="modal-overlay hidden">
+        <div class="modal modal-wide">
+            <h3>Send for Signature</h3>
+            <p>Assign signers for this contract. The default sequential template will be applied.</p>
+            <div id="route-modal-filename" class="modal-filename"></div>
+            <div class="signers-form">
+                <div class="signer-row">
+                    <label>Signer 1 (Supplier)</label>
+                    <input type="email" id="signer-1-email" placeholder="supplier@example.com" class="input-field">
+                </div>
+                <div class="signer-row">
+                    <label>Signer 2 (Company)</label>
+                    <input type="email" id="signer-2-email" placeholder="company@example.com" class="input-field">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="route-modal-cancel" class="btn-secondary">Cancel</button>
+                <button id="route-modal-confirm" class="btn-primary">Send for Signature</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signature Modal -->
+    <div id="signature-modal" class="modal-overlay hidden">
+        <div class="modal modal-wide">
+            <h3>Sign Document</h3>
+            <div id="signature-modal-filename" class="modal-filename"></div>
+
+            <!-- Signature Type Tabs -->
+            <div class="sig-tabs">
+                <button class="sig-tab active" data-tab="draw">Draw</button>
+                <button class="sig-tab" data-tab="type">Type</button>
+            </div>
+
+            <!-- Draw Tab -->
+            <div id="sig-tab-draw" class="sig-tab-content">
+                <canvas id="signature-canvas" width="500" height="150" class="signature-canvas"></canvas>
+                <button id="btn-clear-signature" class="btn-secondary btn-sm">Clear</button>
+            </div>
+
+            <!-- Type Tab -->
+            <div id="sig-tab-type" class="sig-tab-content hidden">
+                <input type="text" id="signature-text" placeholder="Type your name" class="input-field sig-text-input">
+                <div class="sig-font-options">
+                    <button class="sig-font-btn active" data-font="Dancing Script">Dancing Script</button>
+                    <button class="sig-font-btn" data-font="Great Vibes">Great Vibes</button>
+                    <button class="sig-font-btn" data-font="Pacifico">Pacifico</button>
+                    <button class="sig-font-btn" data-font="Caveat">Caveat</button>
+                </div>
+                <canvas id="signature-type-canvas" width="500" height="150" class="signature-canvas"></canvas>
+            </div>
+
+            <div class="modal-actions">
+                <button id="signature-modal-cancel" class="btn-secondary">Cancel</button>
+                <button id="signature-modal-confirm" class="btn-primary">Sign</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signers Status Modal -->
+    <div id="signers-modal" class="modal-overlay hidden">
+        <div class="modal modal-wide">
+            <h3>Signers Status</h3>
+            <div id="signers-modal-filename" class="modal-filename"></div>
+            <div id="signers-list" class="signers-list"></div>
+            <div class="modal-actions">
+                <button id="signers-modal-close" class="btn-secondary">Close</button>
+            </div>
+        </div>
     </div>
 
     <!-- Context Menu -->
