@@ -93,3 +93,12 @@ CREATE TABLE IF NOT EXISTS app.signer_signatures (
 
 CREATE INDEX IF NOT EXISTS signer_signatures_contract_idx
     ON app.signer_signatures (contract_id);
+
+
+-- =============================================================================
+-- Grants — allow app_writer role to access all new tables
+-- =============================================================================
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.approval_templates  TO app_writer;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.contract_signers    TO app_writer;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.signer_signatures   TO app_writer;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.signature_events    TO app_writer;

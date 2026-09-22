@@ -1466,3 +1466,15 @@ body {
     gap: 8px;
     align-items: center;
 }
+
+/* Contracts table — 5 cols: Name, Status, Uploader, Date, Actions (no Size col) */
+#section-contracts .files-table-header,
+#section-contracts .file-row {
+    grid-template-columns: 2.2fr 1fr 1.3fr 1.1fr 1.2fr;
+}
+
+#section-contracts .col-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}

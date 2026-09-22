@@ -850,31 +850,52 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
             if (!files.length) {
-                list.innerHTML = `<div class="files-empty">No contracts uploaded yet.</div>`;
+                list.innerHTML = `
+                    <div class="files-empty">
+                        <svg class="files-empty-logo"><use href="#judy-logo"/></svg>
+                        <span>No contracts uploaded yet</span>
+                        <span style="font-size: 0.8rem">Upload a document to get started</span>
+                    </div>`;
                 return;
             }
 
-            list.innerHTML = files.map(f => {
-                const status = f.contract_status || "uploaded";
-                const contractId = f.contract_id || "";
-                const docId = f.document_id || "";
-                const hasContractId = !!contractId;
+            const fileIcon = `<svg class="file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 
-                return `
-                <div class="file-item">
-                    <div class="file-info">
-                        <div class="file-name">${escapeHtml(f.document_name)}</div>
-                        <div class="file-meta">${f.uploaded_by} · ${formatDate(f.upload_date)}</div>
+            list.innerHTML = `
+                <div class="files-table">
+                    <div class="files-table-header">
+                        <span class="col-name">File Name</span>
+                        <span class="col-status">Status</span>
+                        <span class="col-uploader">Uploaded By</span>
+                        <span class="col-date">Upload Date</span>
+                        <span class="col-actions">Actions</span>
                     </div>
-                    <div class="contract-actions">
-                        <span class="contract-status ${status}">${status.replace(/_/g, " ")}</span>
-                        ${hasContractId
-                            ? `<button class="btn-primary btn-sm btn-route" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}">Send for Signature</button>`
-                            : `<span style="font-size:11px;color:#aaa;font-style:italic;">Re-upload to enable signing</span>`
-                        }
-                    </div>
+                    ${files.map(f => {
+                        const status = f.contract_status || "uploaded";
+                        const contractId = f.contract_id || "";
+                        const hasContractId = !!contractId;
+                        return `
+                        <div class="file-row" data-contract-id="${contractId}" data-name="${escapeHtml(f.document_name)}">
+                            <span class="col-name" title="${escapeHtml(f.document_name)}">${fileIcon}${escapeHtml(f.document_name)}</span>
+                            <span class="col-status"><span class="contract-status ${status}">${status.replace(/_/g, " ")}</span></span>
+                            <span class="col-uploader" title="${escapeHtml(f.uploaded_by)}">${escapeHtml(f.uploaded_by)}</span>
+                            <span class="col-date">${formatDate(f.upload_date)}</span>
+                            <span class="col-actions">
+                                ${!hasContractId
+                                    ? `<span style="font-size:11px;color:#aaa;font-style:italic;">Re-upload to enable signing</span>`
+                                    : status === "uploaded" || status === "analyzing" || status === "ready_for_review"
+                                        ? `<button class="btn-primary btn-sm btn-route" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}">Send for Signature</button>`
+                                        : status === "routed_for_signature"
+                                            ? `<button class="btn-primary btn-sm btn-sign" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}">Sign</button>
+                                               <button class="btn-secondary btn-sm btn-signers" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}">View Signers</button>`
+                                            : status === "signed"
+                                                ? `<button class="btn-secondary btn-sm btn-signers" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}">View Signers</button>`
+                                                : ``
+                                }
+                            </span>
+                        </div>`;
+                    }).join("")}
                 </div>`;
-            }).join("");
 
             // Attach button events
             list.querySelectorAll(".btn-route").forEach(btn => {
