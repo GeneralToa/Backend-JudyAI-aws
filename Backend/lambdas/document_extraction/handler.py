@@ -420,26 +420,71 @@ def process_document(bucket, key):
     trigger_pre_signing_agents(contract_id, extraction_id)
 
 
+def s3_objects_in(event):
+    """
+    Yield (bucket, key) for every S3 object notification in an event.
+
+    The upload prefix already feeds the ingestion queue, so this function is
+    fed by fan-out: S3 -> SNS -> its own SQS queue (Andres, 2026-09-22). That
+    means each SQS record body is an SNS envelope whose "Message" field holds
+    the S3 event as a JSON string - unless the subscription has raw message
+    delivery on, in which case the body is the S3 event itself. Both shapes
+    are accepted, as are a bare S3 event and a direct SNS invocation, so the
+    handler does not depend on which option the IaC ends up with.
+
+    An unrecognised body is logged and skipped, never silently ignored: a
+    silent skip here would look exactly like "the upload never happened".
+    """
+    for record in event.get("Records", []):
+        source = record.get("eventSource") or record.get("EventSource") or ""
+
+        if source == "aws:s3" and "s3" in record:
+            payloads = [{"Records": [record]}]
+        elif source == "aws:sns":
+            payloads = [json.loads(record["Sns"]["Message"])]
+        else:
+            body = record.get("body")
+            try:
+                payload = json.loads(body) if isinstance(body, str) else (body or {})
+            except json.JSONDecodeError:
+                print(f"Skipping record with non-JSON body: {str(body)[:200]}")
+                continue
+            if payload.get("Type") == "Notification" and "Message" in payload:
+                try:
+                    payload = json.loads(payload["Message"])
+                except (json.JSONDecodeError, TypeError):
+                    print(f"Skipping SNS envelope with non-JSON Message: {str(payload.get('Message'))[:200]}")
+                    continue
+            payloads = [payload]
+
+        for payload in payloads:
+            s3_records = payload.get("Records") if isinstance(payload, dict) else None
+            if not s3_records:
+                # S3 also sends a one-off {"Event": "s3:TestEvent"} when a
+                # notification is first configured. Log and move on.
+                print(f"Record carries no S3 object notification - skipping: {json.dumps(payload)[:200]}")
+                continue
+            for s3_record in s3_records:
+                s3_info = s3_record.get("s3") or {}
+                bucket = (s3_info.get("bucket") or {}).get("name")
+                raw_key = (s3_info.get("object") or {}).get("key")
+                if not bucket or not raw_key:
+                    print(f"S3 record missing bucket or key - skipping: {json.dumps(s3_record)[:200]}")
+                    continue
+                # S3 event keys are URL-encoded; file names in this project
+                # contain spaces (for example "Mutual NDA_Template.docx").
+                yield bucket, unquote_plus(raw_key)
+
+
 def lambda_handler(event, context):
-    """Entry point. Handles SQS batches carrying S3 upload notifications."""
+    """Entry point. Handles S3 upload notifications, via SQS/SNS fan-out or direct."""
     print(f"Event received: {json.dumps(event)[:500]}")
 
-    records = event.get("Records", [])
-    if not records:
-        print("No records in event - ignoring")
-        return {"statusCode": 200, "body": "no records"}
-
     processed = 0
+    for bucket, key in s3_objects_in(event):
+        process_document(bucket, key)
+        processed += 1
 
-    for record in records:
-        body = json.loads(record["body"])
-
-        for s3_record in body.get("Records", []):
-            bucket = s3_record["s3"]["bucket"]["name"]
-            # S3 event keys are URL-encoded; file names in this project contain
-            # spaces (for example "Mutual NDA_Template.docx").
-            key = unquote_plus(s3_record["s3"]["object"]["key"])
-            process_document(bucket, key)
-            processed += 1
-
+    if processed == 0:
+        print("No S3 object notifications in event")
     return {"statusCode": 200, "body": f"processed {processed} document(s)"}
