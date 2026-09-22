@@ -5,7 +5,11 @@ data "aws_s3_bucket" "s3_bucket" {
 }
 
 data "aws_sqs_queue" "sqs_queue" {
-  name = "${local.identifier}-${local.config.sqs.name}-sqs"
+  for_each = {
+    for lambda_key, lambda_conf in try(local.config.lambda, {}) : lambda_key => lambda_conf
+    if try(lambda_conf.eventSourceMapping.enabled, false) && try(lambda_conf.eventSourceMapping.type, "") == "sqs"
+  }
+  name = "${local.identifier}-${each.value.eventSourceMapping.name}-sqs"
 }
 
 data "aws_dynamodb_table" "dynamodb_table" {

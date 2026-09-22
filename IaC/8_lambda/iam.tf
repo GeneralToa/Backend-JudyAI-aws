@@ -73,7 +73,7 @@ resource "aws_iam_policy" "data_processor_policy" {
           "sqs:DeleteMessage",
           "sqs:GetQueueAttributes"
         ]
-        Resource = [data.aws_sqs_queue.sqs_queue.arn]
+        Resource = [data.aws_sqs_queue.sqs_queue["dataProcessor"].arn]
       },
       {
         Effect = "Allow"
@@ -250,9 +250,12 @@ resource "aws_iam_policy" "document_extraction_policy" {
         Resource = "${data.aws_s3_bucket.s3_bucket.arn}/*"
       },
       {
-        Effect   = "Allow"
-        Action   = ["bedrock:InvokeDataAutomationAsync"]
-        Resource = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:data-automation-project/*"
+        Effect = "Allow"
+        Action = ["bedrock:InvokeDataAutomationAsync"]
+        Resource = [
+          "arn:aws:bedrock:*:${data.aws_caller_identity.caller_identity.account_id}:data-automation-project/*",
+          "arn:aws:bedrock:*:${data.aws_caller_identity.caller_identity.account_id}:data-automation-profile/*"
+        ]
       },
       {
         Effect   = "Allow"
@@ -289,7 +292,16 @@ resource "aws_iam_policy" "document_extraction_policy" {
           "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${lambda.functionName}"
           if contains(["agentRiskClause", "agentTemplatePrepopulation"], lambda.role)
         ]
-      }
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes"
+        ]
+        Resource = [data.aws_sqs_queue.sqs_queue["documentExtraction"].arn]
+      },
     ]
   })
 }

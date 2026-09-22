@@ -78,7 +78,7 @@ resource "aws_lambda_function" "lambda" {
         AURORA_SECRET_ARN  = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
         AURORA_DATABASE    = "ragdb"
         MODEL_ID           = "${local.config.bedrock.inferenceProfileId}"
-        BDA_OUTPUT_BUCKET  = "${local.config.s3.name}-${data.aws_caller_identity.caller_identity.account_id}-${local.config.region}-an"
+        BDA_OUTPUT_BUCKET  = "${local.identifier}-${local.config.s3.name}-${data.aws_caller_identity.caller_identity.account_id}-${local.config.region}-an"
       }
     }
   }
@@ -92,7 +92,7 @@ resource "aws_lambda_function" "lambda" {
         AURORA_DATABASE    = "ragdb"
         BDA_PROJECT_ARN    = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:data-automation-project/${local.config.bedrock.dataAutomationProjectId}"
         BDA_PROFILE_ARN    = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:data-automation-profile/${local.config.bedrock.dataAutomationProfileId}"
-        BDA_OUTPUT_BUCKET  = "${local.config.s3.name}-${data.aws_caller_identity.caller_identity.account_id}-${local.config.region}-an"
+        BDA_OUTPUT_BUCKET  = "${local.identifier}-${local.config.s3.name}-${data.aws_caller_identity.caller_identity.account_id}-${local.config.region}-an"
         BDA_OUTPUT_PREFIX  = "bda-output"
         PRE_SIGNING_AGENT_ARNS = join(",", [
           "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentRiskClause.functionName}",
@@ -120,8 +120,11 @@ resource "aws_lambda_function" "lambda" {
 
 # ================ LAMBDA SQS POLLING ================
 resource "aws_lambda_event_source_mapping" "sqs_polling" {
-  for_each         = { for lambda_key, lambda_conf in try(local.config.lambda, {}) : lambda_key => lambda_conf if lambda_conf.role == "dataProcessor" }
-  event_source_arn = data.aws_sqs_queue.sqs_queue.arn
+  for_each = {
+    for lambda_key, lambda_conf in try(local.config.lambda, {}) : lambda_key => lambda_conf
+    if try(lambda_conf.eventSourceMapping.enabled, false) && try(lambda_conf.eventSourceMapping.type, "") == "sqs"
+  }
+  event_source_arn = data.aws_sqs_queue.sqs_queue[each.key].arn
   function_name    = aws_lambda_function.lambda[each.key].arn
   enabled          = true
   batch_size       = 10

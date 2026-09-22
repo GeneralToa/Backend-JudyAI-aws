@@ -54,18 +54,3 @@ module "sqs_with_dlq" {
   dlq_message_retention_seconds   = each.value.dlq.message_retention_seconds
   create_dlq_redrive_allow_policy = each.value.dlq.create_redrive_allow_policy
 }
-
-resource "aws_s3_bucket_notification" "bucket_notification" {
-  for_each = {
-    for sqs_key, sqs_conf in try(local.config.sqs, {}) : sqs_key => sqs_conf
-    if try(sqs_conf.bucketEvent.enabled, false)
-  }
-
-  bucket = module.s3_bucket["${local.identifier}-${each.value.bucketEvent.bucketName}"].s3_bucket_id
-
-  queue {
-    queue_arn     = module.sqs_with_dlq[each.key].queue_arn
-    events        = ["s3:ObjectCreated:*"]
-    filter_prefix = try(each.value.bucketEvent.filterPrefix, "")
-  }
-}

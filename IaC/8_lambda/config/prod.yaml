@@ -44,6 +44,8 @@ lambda:
     vpcConfig: false
     lambdaLayer: 
       enabled: false
+    eventSourceMapping:
+      enabled: false
   dataProcessor:
     functionName: "data-processor"
     role: "dataProcessor"
@@ -55,6 +57,10 @@ lambda:
     vpcConfig: false
     lambdaLayer:
       enabled: false
+    eventSourceMapping:
+      enabled: true
+      type: "sqs"
+      name: "ingestion"
   retrieveAndGenerate:
     functionName: "retrieve-and-generate"
     role: "retrieveAndGenerate"
@@ -69,6 +75,8 @@ lambda:
       enabled: true
       arns:
         - "arn:aws:lambda:us-west-2:856699698935:layer:strands-agents-py3_13-x86_64:2"
+    eventSourceMapping:
+      enabled: false
   ingestionPostProcessor:
     functionName: "ingestion-post-processor"
     role: "ingestionPostProcessor"
@@ -79,6 +87,8 @@ lambda:
     timeout: 30
     vpcConfig: false
     lambdaLayer:
+      enabled: false
+    eventSourceMapping:
       enabled: false
   agentRiskClause:
     functionName: "agent-risk-clause"
@@ -92,6 +102,8 @@ lambda:
     vpcConfig: false
     lambdaLayer:
       enabled: false
+    eventSourceMapping:
+      enabled: false
   agentTemplatePrepopulation:
     functionName: "agent-template-prepopulation"
     role: "agentTemplatePrepopulation"
@@ -104,6 +116,8 @@ lambda:
     vpcConfig: false
     lambdaLayer:
       enabled: false
+    eventSourceMapping:
+      enabled: false
   documentExtraction:
     functionName: "document-extraction"
     role: "documentExtraction"
@@ -112,9 +126,14 @@ lambda:
     handler: "handler.lambda_handler"
     runtime: "python3.13"
     timeout: 300
+    memorySize: 256
     vpcConfig: false
     lambdaLayer:
       enabled: false
+    eventSourceMapping:
+      enabled: true
+      type: "sqs"
+      name: "document-extraction"
   signatureWorkflow:
     functionName: "signature-workflow"
     role: "signatureWorkflow"
@@ -125,4 +144,6 @@ lambda:
     timeout: 30
     vpcConfig: false
     lambdaLayer:
+      enabled: false
+    eventSourceMapping:
       enabled: false
