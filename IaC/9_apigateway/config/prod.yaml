@@ -65,4 +65,25 @@ apiGateway:
         integrationMethod: "POST"
         authRequired: true
         timeoutMilliseconds: 29000
+      contractsRoutePost:
+        functionName: "signature-workflow"
+        path: "/contracts/{contractId}/route"
+        method: "POST"
+        integrationMethod: "POST"
+        authRequired: true
+        timeoutMilliseconds: 29000
+      contractsSignersGet:
+        functionName: "signature-workflow"
+        path: "/contracts/{contractId}/signers"
+        method: "GET"
+        integrationMethod: "GET"
+        authRequired: true
+        timeoutMilliseconds: 29000
+      contractsSignPost:
+        functionName: "signature-workflow"
+        path: "/contracts/{contractId}/sign"
+        method: "POST"
+        integrationMethod: "POST"
+        authRequired: true
+        timeoutMilliseconds: 29000
     

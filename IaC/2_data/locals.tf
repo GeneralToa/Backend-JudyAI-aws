@@ -18,7 +18,7 @@ locals {
     ".ico"  = "image/x-icon"
   }
   s3_website_files = merge([
-    for file in fileset("${path.module}/s3-website-utils", "**") : {
+    for file in fileset("${path.module}/../../website", "**") : {
       for s3_key, s3 in try(local.config.s3, {}) : "${local.identifier}-${s3.name}-${file}" => {
         s3Key = "${local.identifier}-${s3.name}"
         file  = file

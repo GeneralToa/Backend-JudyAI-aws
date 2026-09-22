@@ -149,3 +149,40 @@ resource "null_resource" "risk_category_tracked_term" {
     aws_secretsmanager_secret_version.aurora_secret_version
   ]
 }
+
+resource "null_resource" "signature_workflow" {
+  triggers = {
+    cluster_arn = module.aurora[local.config.bedrockKnowledgeBase.auroraDbKey].cluster_arn
+    sql_hash    = filemd5("${path.module}/scripts/003_signature_workflow.sql")
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+
+      run_sql() {
+        aws rds-data execute-statement \
+          --region "${local.config.region}" \
+          --resource-arn "${module.aurora[local.config.bedrockKnowledgeBase.auroraDbKey].cluster_arn}" \
+          --secret-arn "${aws_secretsmanager_secret.aurora_secret[local.config.bedrockKnowledgeBase.auroraDbKey].arn}" \
+          --database "${module.aurora[local.config.bedrockKnowledgeBase.auroraDbKey].cluster_database_name}" \
+          --sql "$1"
+      }
+
+      # DDL — execute each statement from the migration file
+      while IFS= read -r -d ';' stmt || [ -n "$stmt" ]; do
+        trimmed=$(printf '%s' "$stmt" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+        # Skip empty or comment-only blocks
+        content=$(printf '%s' "$trimmed" | sed 's/--[^\n]*//g' | tr -d '[:space:]')
+        [ -z "$content" ] && continue
+        run_sql "$trimmed"
+      done < "${path.module}/scripts/003_signature_workflow.sql"
+
+    EOT
+  }
+
+  depends_on = [
+    null_resource.risk_category_tracked_term,
+    aws_secretsmanager_secret_version.aurora_secret_version
+  ]
+}

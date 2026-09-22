@@ -16,8 +16,10 @@ sqs:
 dynamoDB:
   tableName: "documents"
 
-bedrockKnowledgeBase:
-  bedrockInferenceProfileId: "us.amazon.nova-pro-v1:0"
+bedrock:
+  inferenceProfileId: "us.amazon.nova-pro-v1:0"
+  dataAutomationProjectId: "3582b7d2b55a"
+  dataAutomationProfileId: "us.data-automation-v1"
 
 lambdaLayer:
   enabled: false
@@ -34,7 +36,7 @@ lambda:
   dataUpload:
     functionName: "data-upload"
     role: "dataUpload"
-    sourceCodePath: "data_upload/handler.py"
+    sourceCodePath: "data_upload/"
     outputCodePath: "data_upload/function.zip"
     handler: "handler.lambda_handler"
     runtime: "python3.13"
@@ -45,7 +47,7 @@ lambda:
   dataProcessor:
     functionName: "data-processor"
     role: "dataProcessor"
-    sourceCodePath: "data_processor/handler.py"
+    sourceCodePath: "data_processor/"
     outputCodePath: "data_processor/function.zip"
     handler: "handler.lambda_handler"
     runtime: "python3.13"
@@ -56,7 +58,7 @@ lambda:
   retrieveAndGenerate:
     functionName: "retrieve-and-generate"
     role: "retrieveAndGenerate"
-    sourceCodePath: "retrieve_and_generate/handler.py"
+    sourceCodePath: "retrieve_and_generate/"
     outputCodePath: "retrieve_and_generate/function.zip"
     handler: "handler.lambda_handler"
     runtime: "python3.13"
@@ -70,8 +72,54 @@ lambda:
   ingestionPostProcessor:
     functionName: "ingestion-post-processor"
     role: "ingestionPostProcessor"
-    sourceCodePath: "ingestion_post_processor/handler.py"
+    sourceCodePath: "ingestion_post_processor/"
     outputCodePath: "ingestion_post_processor/function.zip"
+    handler: "handler.lambda_handler"
+    runtime: "python3.13"
+    timeout: 30
+    vpcConfig: false
+    lambdaLayer:
+      enabled: false
+  agentRiskClause:
+    functionName: "agent-risk-clause"
+    role: "agentRiskClause"
+    sourceCodePath: "agent_risk_clause/"
+    outputCodePath: "agent_risk_clause/function.zip"
+    handler: "handler.lambda_handler"
+    runtime: "python3.13"
+    timeout: 300
+    memorySize: 512
+    vpcConfig: false
+    lambdaLayer:
+      enabled: false
+  agentTemplatePrepopulation:
+    functionName: "agent-template-prepopulation"
+    role: "agentTemplatePrepopulation"
+    sourceCodePath: "agent_template_prepopulation/"
+    outputCodePath: "agent_template_prepopulation/function.zip"
+    handler: "handler.lambda_handler"
+    runtime: "python3.13"
+    timeout: 300
+    memorySize: 512
+    vpcConfig: false
+    lambdaLayer:
+      enabled: false
+  documentExtraction:
+    functionName: "document-extraction"
+    role: "documentExtraction"
+    sourceCodePath: "document_extraction/"
+    outputCodePath: "document_extraction/function.zip"
+    handler: "handler.lambda_handler"
+    runtime: "python3.13"
+    timeout: 300
+    vpcConfig: false
+    lambdaLayer:
+      enabled: false
+  signatureWorkflow:
+    functionName: "signature-workflow"
+    role: "signatureWorkflow"
+    sourceCodePath: "signature_workflow/"
+    outputCodePath: "signature_workflow/function.zip"
     handler: "handler.lambda_handler"
     runtime: "python3.13"
     timeout: 30

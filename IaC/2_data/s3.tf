@@ -28,8 +28,8 @@ resource "aws_s3_object" "website_files" {
   for_each     = try(local.s3_website_files, {})
   bucket       = module.s3_bucket[each.value.s3Key].s3_bucket_id
   key          = each.value.file
-  source       = "${path.module}/s3-website-utils/${each.value.file}"
-  etag         = filemd5("${path.module}/s3-website-utils/${each.value.file}")
+  source       = "${path.module}/../../website/${each.value.file}"
+  etag         = filemd5("${path.module}/../../website/${each.value.file}")
   content_type = lookup(local.s3_website_content_types, regex("\\.[^.]+$", each.value.file), "application/octet-stream")
 }
 

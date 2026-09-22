@@ -15,7 +15,7 @@ data "aws_dynamodb_table" "dynamodb_table" {
 data "archive_file" "lambda_source" {
   for_each    = try(local.config.lambda, {})
   type        = "zip"
-  source_file = "${path.module}/../../Backend/lambdas/${each.value.sourceCodePath}"
+  source_dir  = "${path.module}/../../Backend/lambdas/${each.value.sourceCodePath}"
   output_path = "${path.module}/functions/${each.value.outputCodePath}"
 }
 

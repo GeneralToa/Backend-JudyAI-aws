@@ -142,7 +142,7 @@ resource "aws_iam_policy" "rag_policy" {
         Action = [
           "bedrock:GetInferenceProfile"
         ]
-        Resource = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:inference-profile/${local.config.bedrockKnowledgeBase.bedrockInferenceProfileId}"
+        Resource = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:inference-profile/${local.config.bedrock.inferenceProfileId}"
       },
       {
         Effect = "Allow"
@@ -235,6 +235,197 @@ resource "aws_iam_policy" "scheduler_execution_policy" {
   })
 }
 
+# =============== DOCUMENT EXTRACTION POLICY =================
+resource "aws_iam_policy" "document_extraction_policy" {
+  name = "${local.identifier}-document-extraction-policy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject"
+        ]
+        Resource = "${data.aws_s3_bucket.s3_bucket.arn}/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeDataAutomationAsync"]
+        Resource = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:data-automation-project/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["bedrock:GetDataAutomationStatus"]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+        ]
+        Resource = data.aws_ssm_parameter.kms_aurora_postgres_arn.value
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "rds-data:ExecuteStatement"
+        ]
+        Resource = data.aws_ssm_parameter.aurora_postgres_arn.value
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = [
+          for lambda_key, lambda in try(local.config.lambda, {}) :
+          "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${lambda.functionName}"
+          if contains(["agentRiskClause", "agentTemplatePrepopulation"], lambda.role)
+        ]
+      }
+    ]
+  })
+}
+
+# =============== AGENT RISK CLAUSE POLICY =================
+resource "aws_iam_policy" "agent_risk_clause_policy" {
+  name = "${local.identifier}-agent-risk-clause-policy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:GetInferenceProfile"
+        ]
+        Resource = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:inference-profile/${local.config.bedrock.inferenceProfileId}"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+        ]
+        Resource = data.aws_ssm_parameter.kms_aurora_postgres_arn.value
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "rds-data:ExecuteStatement"
+        ]
+        Resource = data.aws_ssm_parameter.aurora_postgres_arn.value
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+      }
+    ]
+  })
+}
+
+# =============== AGENT TEMPLATE PREPOPULATION POLICY =================
+resource "aws_iam_policy" "agent_template_prepopulation_policy" {
+  name = "${local.identifier}-agent-template-prepopulation-policy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject"
+        ]
+        Resource = "${data.aws_s3_bucket.s3_bucket.arn}/bda-output/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:GetInferenceProfile"
+        ]
+        Resource = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:inference-profile/${local.config.bedrock.inferenceProfileId}"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+        ]
+        Resource = data.aws_ssm_parameter.kms_aurora_postgres_arn.value
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "rds-data:ExecuteStatement"
+        ]
+        Resource = data.aws_ssm_parameter.aurora_postgres_arn.value
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+      }
+    ]
+  })
+}
+
+# =============== SIGNATURE WORKFLOW POLICY =================
+resource "aws_iam_policy" "signature_workflow_policy" {
+  name = "${local.identifier}-signature-workflow-policy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+        ]
+        Resource = [
+          data.aws_ssm_parameter.kms_aurora_postgres_arn.value
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = ["ssm:GetParameters"]
+        Resource = [
+          data.aws_ssm_parameter.aurora_postgres_arn.arn,
+          data.aws_ssm_parameter.kms_aurora_postgres_arn.arn,
+          data.aws_ssm_parameter.app_writer_secret_arn.arn
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "rds-data:ExecuteStatement"
+        ]
+        Resource = data.aws_ssm_parameter.aurora_postgres_arn.value
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = data.aws_ssm_parameter.app_writer_secret_arn.value
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role" "scheduler_execution" {
   name = "${local.identifier}-scheduler-execution-role"
 
@@ -310,6 +501,42 @@ resource "aws_iam_role_policy_attachment" "lambda_ingestion_post_processor_role_
   }
   role       = aws_iam_role.lambda_role[each.key].name
   policy_arn = aws_iam_policy.ingestion_post_processor_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_document_extraction_role_att" {
+  for_each = {
+    for lambda_key, lambda_conf in try(local.config.lambda, []) : lambda_key => lambda_conf
+    if lambda_conf.role == "documentExtraction"
+  }
+  role       = aws_iam_role.lambda_role[each.key].name
+  policy_arn = aws_iam_policy.document_extraction_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_agent_risk_clause_role_att" {
+  for_each = {
+    for lambda_key, lambda_conf in try(local.config.lambda, []) : lambda_key => lambda_conf
+    if lambda_conf.role == "agentRiskClause"
+  }
+  role       = aws_iam_role.lambda_role[each.key].name
+  policy_arn = aws_iam_policy.agent_risk_clause_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_agent_template_prepopulation_role_att" {
+  for_each = {
+    for lambda_key, lambda_conf in try(local.config.lambda, []) : lambda_key => lambda_conf
+    if lambda_conf.role == "agentTemplatePrepopulation"
+  }
+  role       = aws_iam_role.lambda_role[each.key].name
+  policy_arn = aws_iam_policy.agent_template_prepopulation_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_signature_workflow_role_att" {
+  for_each = {
+    for lambda_key, lambda_conf in try(local.config.lambda, []) : lambda_key => lambda_conf
+    if lambda_conf.role == "signatureWorkflow"
+  }
+  role       = aws_iam_role.lambda_role[each.key].name
+  policy_arn = aws_iam_policy.signature_workflow_policy.arn
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_vpc_access_role_att" {

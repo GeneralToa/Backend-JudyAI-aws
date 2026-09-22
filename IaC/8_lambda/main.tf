@@ -51,7 +51,7 @@ resource "aws_lambda_function" "lambda" {
     content {
       variables = {
         KNOWLEDGE_BASE_ID    = data.aws_ssm_parameter.knowledge_base_id.value
-        FOUNDATION_MODEL_ARN = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:inference-profile/${local.config.bedrockKnowledgeBase.bedrockInferenceProfileId}"
+        FOUNDATION_MODEL_ARN = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:inference-profile/${local.config.bedrock.inferenceProfileId}"
       }
     }
   }
@@ -69,6 +69,39 @@ resource "aws_lambda_function" "lambda" {
       }
     }
   }
+
+  dynamic "environment" {
+    for_each = contains(["agentRiskClause", "agentTemplatePrepopulation"], each.value.role) ? [1] : []
+    content {
+      variables = {
+        AURORA_CLUSTER_ARN = data.aws_ssm_parameter.aurora_postgres_arn.value
+        AURORA_SECRET_ARN  = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+        AURORA_DATABASE    = "ragdb"
+        MODEL_ID           = "${local.config.bedrock.inferenceProfileId}"
+        BDA_OUTPUT_BUCKET  = "${local.config.s3.name}-${data.aws_caller_identity.caller_identity.account_id}-${local.config.region}-an"
+      }
+    }
+  }
+
+  dynamic "environment" {
+    for_each = each.value.role == "documentExtraction" ? [1] : []
+    content {
+      variables = {
+        AURORA_CLUSTER_ARN = data.aws_ssm_parameter.aurora_postgres_arn.value
+        AURORA_SECRET_ARN  = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+        AURORA_DATABASE    = "ragdb"
+        BDA_PROJECT_ARN    = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:data-automation-project/${local.config.bedrock.dataAutomationProjectId}"
+        BDA_PROFILE_ARN    = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:data-automation-profile/${local.config.bedrock.dataAutomationProfileId}"
+        BDA_OUTPUT_BUCKET  = "${local.config.s3.name}-${data.aws_caller_identity.caller_identity.account_id}-${local.config.region}-an"
+        BDA_OUTPUT_PREFIX  = "bda-output"
+        PRE_SIGNING_AGENT_ARNS = join(",", [
+          "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentRiskClause.functionName}",
+          "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentTemplatePrepopulation.functionName}"
+        ])
+      }
+    }
+  }
+
 
   dynamic "vpc_config" {
     for_each = try(each.value.vpcConfig, false) ? [1] : []

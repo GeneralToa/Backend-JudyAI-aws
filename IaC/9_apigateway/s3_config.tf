@@ -1,5 +1,5 @@
 resource "local_file" "config_js" {
-  filename = "${path.module}/s3-website-utils/config.js"
+  filename = "${path.module}/../../website/config.js"
   content  = <<-EOF
 const CONFIG = {
     API_BASE_URL: "${module.api_gateway["lambdaGateway"].api_endpoint}",
