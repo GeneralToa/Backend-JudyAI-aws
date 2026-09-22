@@ -24,6 +24,13 @@ import boto3
 # --- Clients ---
 rds_data_client = boto3.client("rds-data", region_name="us-west-2")
 ssm_client = boto3.client("ssm", region_name="us-west-2")
+lambda_client = boto3.client("lambda", region_name="us-west-2")
+
+# --- Config ---
+OBLIGATION_AGENT_FUNCTION_NAME = os.environ.get(
+    "OBLIGATION_AGENT_FUNCTION_NAME",
+    "rag-app-prod-agent-obligation-tracking",
+)
 
 # --- SSM parameter names ---
 _AURORA_CLUSTER_ARN = None
@@ -329,6 +336,20 @@ def handle_sign(contract_id, user_email, event):
         )
 
         print(f"Contract {contract_id} fully signed — completed event inserted")
+
+        # Fire obligation agent async — fire and forget, must not fail the sign response
+        try:
+            lambda_client.invoke(
+                FunctionName=OBLIGATION_AGENT_FUNCTION_NAME,
+                InvocationType="Event",
+                Payload=json.dumps({
+                    "contract_id": contract_id,
+                    "trigger": "signature_completed",
+                }),
+            )
+            print(f"Obligation agent invoked for contract {contract_id}")
+        except Exception as e:
+            print(f"Warning: failed to invoke obligation agent for contract {contract_id}: {e}")
 
         return response(200, {
             "contractId": contract_id,
