@@ -62,9 +62,15 @@ resource "aws_iam_policy" "data_processor_policy" {
         Resource = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:knowledge-base/*"
       },
       {
-        Effect   = "Allow"
-        Action   = ["ssm:GetParameter"]
-        Resource = [data.aws_ssm_parameter.knowledge_base_id.arn, data.aws_ssm_parameter.data_source_id.arn]
+        Effect = "Allow"
+        Action = ["ssm:GetParameters"]
+        Resource = [
+          data.aws_ssm_parameter.knowledge_base_id.arn,
+          data.aws_ssm_parameter.data_source_id.arn,
+          data.aws_ssm_parameter.kms_aurora_postgres_arn.arn,
+          data.aws_ssm_parameter.aurora_postgres_arn.arn,
+          data.aws_ssm_parameter.app_writer_secret_arn.arn
+        ]
       },
       {
         Effect = "Allow"
@@ -112,7 +118,22 @@ resource "aws_iam_policy" "data_processor_policy" {
           "kms:Decrypt",
           "kms:GenerateDataKey",
         ]
-        Resource = data.aws_ssm_parameter.kms_dynamodb_arn.value
+        Resource = [
+          data.aws_ssm_parameter.kms_dynamodb_arn.value,
+          data.aws_ssm_parameter.kms_aurora_postgres_arn.value
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "rds-data:ExecuteStatement"
+        ]
+        Resource = data.aws_ssm_parameter.aurora_postgres_arn.value
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = data.aws_ssm_parameter.app_writer_secret_arn.value
       }
     ]
   })
