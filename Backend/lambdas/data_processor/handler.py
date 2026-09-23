@@ -29,6 +29,7 @@ bedrock_agent_client = boto3.client("bedrock-agent")
 dynamodb_client = boto3.client("dynamodb")
 s3_client = boto3.client("s3")
 scheduler_client = boto3.client("scheduler")
+rds_data_client = boto3.client("rds-data", region_name="us-west-2")
 
 # --- Environment Variables ---
 KB_ID_PARAM_NAME = os.environ["KB_ID_PARAM_NAME"]
@@ -42,6 +43,11 @@ SCHEDULER_ROLE_ARN = os.environ["SCHEDULER_ROLE_ARN"]
 # --- Cached SSM parameters ---
 _kb_id = None
 _ds_id = None
+_aurora_cluster_arn = None
+_app_writer_secret_arn = None
+
+# --- Aurora database name ---
+AURORA_DATABASE = "ragdb"
 
 
 def get_kb_params():
@@ -51,6 +57,37 @@ def get_kb_params():
         _kb_id = ssm_client.get_parameter(Name=KB_ID_PARAM_NAME)["Parameter"]["Value"]
         _ds_id = ssm_client.get_parameter(Name=DS_ID_PARAM_NAME)["Parameter"]["Value"]
     return _kb_id, _ds_id
+
+
+def get_aurora_params():
+    """Resolve and cache Aurora cluster ARN and app_writer secret ARN from SSM."""
+    global _aurora_cluster_arn, _app_writer_secret_arn
+    if _aurora_cluster_arn and _app_writer_secret_arn:
+        return _aurora_cluster_arn, _app_writer_secret_arn
+    params = ssm_client.get_parameters(
+        Names=[
+            "/rag-app-prod/aurora/postgres-arn",
+            "/rag-app-prod/secret-manager/app-writer-secret",
+        ]
+    )
+    by_name = {p["Name"]: p["Value"] for p in params["Parameters"]}
+    _aurora_cluster_arn = by_name["/rag-app-prod/aurora/postgres-arn"]
+    _app_writer_secret_arn = by_name["/rag-app-prod/secret-manager/app-writer-secret"]
+    return _aurora_cluster_arn, _app_writer_secret_arn
+
+
+def execute_sql(sql, parameters=None):
+    """Execute a SQL statement via the RDS Data API."""
+    cluster_arn, secret_arn = get_aurora_params()
+    kwargs = {
+        "resourceArn": cluster_arn,
+        "secretArn": secret_arn,
+        "database": AURORA_DATABASE,
+        "sql": sql,
+    }
+    if parameters:
+        kwargs["parameters"] = parameters
+    return rds_data_client.execute_statement(**kwargs)
 
 
 def response(status_code, body):
@@ -305,6 +342,31 @@ def handle_list_files(event):
             })
 
         files.sort(key=lambda f: f["upload_date"], reverse=True)
+
+        # Merge contract status from Aurora
+        contract_ids = [f["contract_id"] for f in files if f["contract_id"]]
+        if contract_ids:
+            try:
+                placeholders = ", ".join([f":id{i}::uuid" for i in range(len(contract_ids))])
+                params = [
+                    {"name": f"id{i}", "value": {"stringValue": cid}}
+                    for i, cid in enumerate(contract_ids)
+                ]
+                result = execute_sql(
+                    f"SELECT id::text, status FROM app.contracts WHERE id = ANY(ARRAY[{placeholders}])",
+                    params,
+                )
+                status_map = {
+                    row[0]["stringValue"]: row[1]["stringValue"]
+                    for row in result.get("records", [])
+                }
+                for f in files:
+                    f["contract_status"] = status_map.get(f["contract_id"], "uploaded")
+            except Exception as e:
+                print(f"Warning: failed to fetch contract statuses from Aurora: {e}")
+                for f in files:
+                    f["contract_status"] = "uploaded"
+
         return response(200, {"files": files})
 
     except Exception as e:
