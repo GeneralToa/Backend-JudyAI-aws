@@ -90,13 +90,14 @@ resource "aws_lambda_function" "lambda" {
         AURORA_CLUSTER_ARN = data.aws_ssm_parameter.aurora_postgres_arn.value
         AURORA_SECRET_ARN  = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
         AURORA_DATABASE    = "ragdb"
-        BDA_PROJECT_ARN    = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:data-automation-project/${local.config.bedrock.dataAutomationProjectId}"
+        BDA_PROJECT_ARN    = data.aws_ssm_parameter.data_automation_project_arn.value
         BDA_PROFILE_ARN    = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:data-automation-profile/${local.config.bedrock.dataAutomationProfileId}"
         BDA_OUTPUT_BUCKET  = "${local.identifier}-${local.config.s3.name}-${data.aws_caller_identity.caller_identity.account_id}-${local.config.region}-an"
         BDA_OUTPUT_PREFIX  = "bda-output"
         PRE_SIGNING_AGENT_ARNS = join(",", [
           "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentRiskClause.functionName}",
-          "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentTemplatePrepopulation.functionName}"
+          "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentTemplatePrepopulation.functionName}",
+          "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentSummary.functionName}"
         ])
       }
     }

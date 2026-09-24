@@ -18,6 +18,16 @@ resource "aws_ssm_parameter" "data_source_id" {
   }
 }
 
+resource "aws_ssm_parameter" "data_automation_project_arn" {
+  name  = "/${local.identifier}/bedrock/data-automation-project-arn"
+  type  = "String"
+  value = awscc_bedrock_data_automation_project.data_automation_project.project_arn
+
+  tags = {
+    Name = "${local.identifier}-bda-arn"
+  }
+}
+
 resource "aws_ssm_parameter" "kms_dynamodb" {
   name  = "/${local.identifier}/kms/dynamodb-arn"
   type  = "String"

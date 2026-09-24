@@ -4,6 +4,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "6.55.0"
     }
+    awscc = {
+      source  = "hashicorp/awscc"
+      version = "1.103.0"
+    }
     null = {
       source  = "hashicorp/null"
       version = "~> 3.0"
@@ -23,5 +27,14 @@ provider "aws" {
       Env       = terraform.workspace
       Terraform = "true"
     }, local.config.tags)
+  }
+}
+
+
+provider "awscc" {
+  region = local.config.region
+  assume_role = {
+    role_arn     = local.config.role_arn
+    session_name = "terraform-judy"
   }
 }

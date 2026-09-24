@@ -18,7 +18,6 @@ dynamoDB:
 
 bedrock:
   inferenceProfileId: "us.amazon.nova-pro-v1:0"
-  dataAutomationProjectId: "3582b7d2b55a"
   dataAutomationProfileId: "us.data-automation-v1"
 
 lambdaLayer:

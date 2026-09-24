@@ -58,3 +58,96 @@ resource "aws_bedrockagent_data_source" "s3" {
 
   data_deletion_policy = "RETAIN"
 }
+
+
+resource "awscc_bedrock_data_automation_project" "data_automation_project" {
+  project_name        = local.config.bedrockDataAutomationProject.name
+  project_description = local.config.bedrockDataAutomationProject.description
+
+  standard_output_configuration = {
+    document = {
+      extraction = {
+        granularity = {
+          types = ["PAGE", "ELEMENT", "LINE"]
+        }
+        bounding_box = {
+          state = "ENABLED"
+        }
+      }
+      generative_field = {
+        state = "DISABLED"
+      }
+      output_format = {
+        text_format = {
+          types = ["MARKDOWN"]
+        }
+        additional_file_format = {
+          state = "DISABLED"
+        }
+      }
+    }
+    image = {
+      extraction = {
+        bounding_box = {
+          state = "ENABLED"
+        }
+        category = {
+          state = "ENABLED"
+          types = ["TEXT_DETECTION"]
+        }
+      }
+      generative_field = {
+        state = "ENABLED"
+        types = ["IMAGE_SUMMARY"]
+      }
+    }
+    video = {
+      extraction = {
+        bounding_box = {
+          state = "ENABLED"
+        }
+        category = {
+          state = "ENABLED"
+          types = ["TEXT_DETECTION"]
+        }
+      }
+      generative_field = {
+        state = "ENABLED"
+        types = ["VIDEO_SUMMARY", "CHAPTER_SUMMARY"]
+      }
+    }
+    audio = {
+      extraction = {
+        category = {
+          state = "ENABLED"
+          type_configuration = {
+            transcript = {
+              channel_labeling = {
+                state = "DISABLED"
+              }
+              speaker_labeling = {
+                state = "DISABLED"
+              }
+            }
+          }
+        }
+      }
+      generative_field = {
+        state = "DISABLED"
+      }
+    }
+  }
+  override_configuration = {
+    document = {
+      splitter = {
+        state = "DISABLED"
+      }
+    }
+  }
+
+  tags = [
+    for tag_key, tag_value in merge({ Env = terraform.workspace, Terraform = "true" }, local.config.tags) : {
+      key   = tag_key,
+      value = tag_value
+  }]
+}

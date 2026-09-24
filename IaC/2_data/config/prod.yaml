@@ -66,7 +66,7 @@ sqs:
     receive_wait_time_seconds: 20 #Long polling
     dlq:
       create_queue_policy: true
-      max_receive_count: 10
+      max_receive_count: 3
       visibility_timeout_seconds: 120
       message_retention_seconds: 86400
       create_redrive_allow_policy: true
@@ -78,7 +78,7 @@ sqs:
     receive_wait_time_seconds: 20 #Long polling
     dlq:
       create_queue_policy: true
-      max_receive_count: 10
+      max_receive_count: 3
       visibility_timeout_seconds: 360
       message_retention_seconds: 86400
       create_redrive_allow_policy: true
@@ -112,3 +112,7 @@ bedrockKnowledgeBase:
   # Bedrock Embedding Model (Cohere Embed Multilingual v3 - supported with RDS vector store)
   # Only specify the model ID - the ARN is constructed automatically using aws_region
   bedrock_embedding_model_id: "cohere.embed-multilingual-v3"
+
+bedrockDataAutomationProject:
+  name: "judy-ai-contract-extraction"
+  description: "Judy AI POC: document text extraction with element and line bounding boxes for signature-field placement"

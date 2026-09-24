@@ -79,3 +79,7 @@ data "aws_ssm_parameter" "judy_ai_writer_secret_arn" {
 data "aws_ssm_parameter" "app_writer_secret_arn" {
   name = "/${local.identifier}/secret-manager/app-writer-secret"
 }
+
+data "aws_ssm_parameter" "data_automation_project_arn" {
+  name = "/${local.identifier}/bedrock/data-automation-project-arn"
+}
