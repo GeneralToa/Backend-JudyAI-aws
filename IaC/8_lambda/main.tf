@@ -71,7 +71,7 @@ resource "aws_lambda_function" "lambda" {
   }
 
   dynamic "environment" {
-    for_each = contains(["agentRiskClause", "agentTemplatePrepopulation"], each.value.role) ? [1] : []
+    for_each = contains(["agentRiskClause", "agentTemplatePrepopulation", "agentSummary"], each.value.role) ? [1] : []
     content {
       variables = {
         AURORA_CLUSTER_ARN = data.aws_ssm_parameter.aurora_postgres_arn.value

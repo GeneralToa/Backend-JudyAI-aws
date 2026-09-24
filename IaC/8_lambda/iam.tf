@@ -311,7 +311,7 @@ resource "aws_iam_policy" "document_extraction_policy" {
         Resource = [
           for lambda_key, lambda in try(local.config.lambda, {}) :
           "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${lambda.functionName}"
-          if contains(["agentRiskClause", "agentTemplatePrepopulation"], lambda.role)
+          if contains(["agentRiskClause", "agentTemplatePrepopulation", "agentSummary"], lambda.role)
         ]
       },
       {
@@ -459,6 +459,48 @@ resource "aws_iam_policy" "signature_workflow_policy" {
   })
 }
 
+# =============== AGENT SUMMARY POLICY =================
+resource "aws_iam_policy" "agent_summary_policy" {
+  name = "${local.identifier}-agent-summary-policy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:GetInferenceProfile"
+        ]
+        Resource = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:inference-profile/${local.config.bedrock.inferenceProfileId}"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+        ]
+        Resource = data.aws_ssm_parameter.kms_aurora_postgres_arn.value
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "rds-data:ExecuteStatement"
+        ]
+        Resource = data.aws_ssm_parameter.aurora_postgres_arn.value
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role" "scheduler_execution" {
   name = "${local.identifier}-scheduler-execution-role"
 
@@ -570,6 +612,15 @@ resource "aws_iam_role_policy_attachment" "lambda_signature_workflow_role_att" {
   }
   role       = aws_iam_role.lambda_role[each.key].name
   policy_arn = aws_iam_policy.signature_workflow_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_agent_summary_role_att" {
+  for_each = {
+    for lambda_key, lambda_conf in try(local.config.lambda, []) : lambda_key => lambda_conf
+    if lambda_conf.role == "agentSummary"
+  }
+  role       = aws_iam_role.lambda_role[each.key].name
+  policy_arn = aws_iam_policy.agent_summary_policy.arn
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_vpc_access_role_att" {

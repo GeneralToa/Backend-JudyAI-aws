@@ -147,3 +147,17 @@ lambda:
       enabled: false
     eventSourceMapping:
       enabled: false
+  agentSummary:
+    functionName: "agent-summary"
+    role: "agentSummary"
+    sourceCodePath: "agent_summary/"
+    outputCodePath: "agent_summary/function.zip"
+    handler: "handler.lambda_handler"
+    runtime: "python3.13"
+    timeout: 300
+    memorySize: 512
+    vpcConfig: false
+    lambdaLayer:
+      enabled: false
+    eventSourceMapping:
+      enabled: false
