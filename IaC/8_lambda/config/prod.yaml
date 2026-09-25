@@ -160,3 +160,17 @@ lambda:
       enabled: false
     eventSourceMapping:
       enabled: false
+  analysisApi:
+    functionName: "analysis-api"
+    role: "analysisApi"
+    sourceCodePath: "analysis_api/"
+    outputCodePath: "analysis_api/function.zip"
+    handler: "handler.lambda_handler"
+    runtime: "python3.13"
+    timeout: 29
+    memorySize: 256
+    vpcConfig: false
+    lambdaLayer:
+      enabled: false
+    eventSourceMapping:
+      enabled: false

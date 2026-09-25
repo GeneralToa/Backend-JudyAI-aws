@@ -86,4 +86,25 @@ apiGateway:
         integrationMethod: "POST"
         authRequired: true
         timeoutMilliseconds: 29000
+      contractsAnalysisPost:
+        functionName: "analysis-api"
+        path: "/contracts/{contractId}/analysis"
+        method: "POST"
+        integrationMethod: "POST"
+        authRequired: true
+        timeoutMilliseconds: 29000
+      contractsAnalysisGet:
+        functionName: "analysis-api"
+        path: "/contracts/{contractId}/analysis"
+        method: "GET"
+        integrationMethod: "GET"
+        authRequired: true
+        timeoutMilliseconds: 29000
+      contractsAnalysisByAgentTypeGet:
+        functionName: "analysis-api"
+        path: "/contracts/{contractId}/analysis/{agentType}"
+        method: "GET"
+        integrationMethod: "GET"
+        authRequired: true
+        timeoutMilliseconds: 29000
     
