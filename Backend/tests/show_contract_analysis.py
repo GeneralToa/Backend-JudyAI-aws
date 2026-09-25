@@ -151,6 +151,35 @@ def show(cid):
     return ext, fields
 
 
+def show_summary(extraction_id):
+    rows = q(f"""
+        select s.summary_text, s.key_points::text as key_points, s.word_count,
+               a.raw_response::text as raw
+          from judy_ai.contract_summaries s join judy_ai.agent_runs a on a.id = s.run_id
+         where a.extraction_id = '{extraction_id}'
+    """)
+    hr("AGENT 3  PLAIN-LANGUAGE SUMMARY" + (f"  -  {rows[0]['word_count']} words" if rows else ""))
+    if not rows:
+        print("  no summary yet")
+        return
+    row = rows[0]
+    print("  " + row["summary_text"].replace("\n", "\n  "))
+    print()
+    # The API serves key points as strings; the traces (quote + page) live in
+    # raw_response so a reviewer can check each point against the document.
+    traced = {}
+    try:
+        traced = {kp["point"]: kp for kp in json.loads(row["raw"]).get("key_points_traced", [])}
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        pass
+    for point in json.loads(row["key_points"] or "[]"):
+        kp = traced.get(point, {})
+        page = f"p{kp['source_page']}" if kp.get("source_page") else "  "
+        print(f"  {page}  {point}")
+        if kp.get("source_quote"):
+            print(f"        \"{kp['source_quote'][:140]}\"")
+
+
 def retrigger(cid):
     c = contract(cid)
     before = latest_extraction(cid)
@@ -229,6 +258,9 @@ def main():
         overlay(cid, sys.argv[sys.argv.index("--overlay") + 1])
     else:
         show(cid)
+    ext = latest_extraction(cid)
+    if ext:
+        show_summary(ext["id"])
 
 
 if __name__ == "__main__":
