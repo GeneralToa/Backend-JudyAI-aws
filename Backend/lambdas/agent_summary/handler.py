@@ -71,8 +71,9 @@ KEY_POINTS_MAX = 10
 # Sentences that only list topics - see remove_topic_list_sentences().
 TOPIC_LIST_OPENERS = re.compile(
     r"^(?:(?:key|other|important|additional) (?:terms|provisions|clauses) (?:include|cover|address)"
-    r"|the agreement (?:also )?(?:includes|contains|covers|has) (?:provisions? (?:for|on)|"
-    r"(?:the following )?(?:terms|clauses|sections)))",
+    r"|the agreement (?:also )?(?:includes|contains|covers|has) "
+    r"(?:(?:the following|standard|general|usual|customary) )?"
+    r"(?:provisions?|terms|clauses|sections)(?: (?:for|on|about|regarding))?)",
     re.IGNORECASE,
 )
 TOPIC_WORDS = ("confidential", "liabilit", "indemnif", "ownership", "intellectual property",
