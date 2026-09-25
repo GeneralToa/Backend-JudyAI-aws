@@ -168,7 +168,33 @@ def fetch_extraction(extraction_id):
     return text
 
 
-def start_run(contract_id, extraction_id):
+def start_run(contract_id, extraction_id, run_id=None):
+    """
+    Create the run row, or claim one the analysis API created.
+
+    A re-run through the API inserts a 'pending' row first so it can hand
+    the UI a run id straight away, then passes that id here. Without one
+    (the automatic path from document_extraction) the row is inserted here.
+    """
+    if run_id:
+        records = execute_sql(
+            """
+            UPDATE judy_ai.agent_runs
+               SET status = 'running', model_id = :model_id, prompt_version = :prompt_version,
+                   started_at = now()
+             WHERE id = :run_id::uuid AND agent_type = 'risk_clause'
+            RETURNING id::text
+            """,
+            [
+                string_param("run_id", run_id),
+                string_param("model_id", MODEL_ID),
+                string_param("prompt_version", PROMPT_VERSION),
+            ],
+        )
+        if records:
+            return records[0][0]["stringValue"]
+        print(f"run_id {run_id} not found for this agent - inserting a new run")
+
     records = execute_sql(
         """
         INSERT INTO judy_ai.agent_runs
@@ -577,13 +603,13 @@ def playbook_suggestion(rule):
 # =============================================================
 # Handler
 # =============================================================
-def analyse(contract_id, extraction_id):
+def analyse(contract_id, extraction_id, run_id=None):
     contract_text = fetch_extraction(extraction_id)
     if len(contract_text) > MAX_CONTRACT_CHARS:
         print(f"Contract text {len(contract_text)} chars, truncating to {MAX_CONTRACT_CHARS}")
         contract_text = contract_text[:MAX_CONTRACT_CHARS]
 
-    run_id = start_run(contract_id, extraction_id)
+    run_id = start_run(contract_id, extraction_id, run_id)
     print(f"Run {run_id} started for contract {contract_id}")
 
     started = time.time()
@@ -644,4 +670,6 @@ def lambda_handler(event, context):
     if not contract_id or not extraction_id:
         raise ValueError("contract_id and extraction_id are required")
 
-    return analyse(contract_id, extraction_id)
+    # run_id is present on re-runs from analysis-api, absent on the automatic
+    # path from document_extraction.
+    return analyse(contract_id, extraction_id, event.get("run_id"))

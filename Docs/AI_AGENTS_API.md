@@ -1,6 +1,10 @@
 # AI Agents API — contract
 
-**Status: DRAFT for review.** Nothing here is deployed yet.
+**Status: implemented** (`Backend/lambdas/analysis_api/handler.py`, 2026-09-26) — all three
+routes verified locally against the environment's database with real HTTP API v2 events
+(`Backend/tests/test_analysis_api.py`, 11/11). Awaiting deployment (JAAPESWM-45). The three
+pre-signing agents already run automatically on upload; this API is how the interface reads
+their results and requests re-runs.
 
 This is the interface between the AI workstream and the application. Lloyd builds the UI
 against this; Zuhair implements behind it. If something here is awkward for the frontend, say
@@ -126,7 +130,11 @@ GET /contracts/{contractId}/analysis
 ```
 
 `status` is one of `notStarted`, `pending`, `running`, `succeeded`, `failed`.
-When `failed`, an `error` string is included on that agent.
+When `failed`, an `error` string is included on that agent. The response also carries
+`contractStatus` (the `app.contracts.status` value, e.g. `uploaded`, `routed_for_signature`,
+`signed`) so one call is enough to decide whether obligation tracking can apply, and
+`extraction.error` when extraction failed. `resultCount` for `summary` is the number of key
+points.
 
 `resultCount` lets the UI render counts (e.g. "7 risks flagged") without fetching full results.
 
@@ -306,8 +314,12 @@ Not available until the contract is signed. Returns `409` before then.
 | `CONTRACT_NOT_FOUND` | 404 | Unknown `contractId` |
 | `ANALYSIS_NOT_READY` | 409 | Agent has not succeeded yet — `status` tells you where it is |
 | `ANALYSIS_IN_PROGRESS` | 409 | Re-run requested while one is already running |
-| `EXTRACTION_FAILED` | 422 | BDA could not read the document. Per the SOW these go to the DLQ for manual resolution |
-| `UNAUTHORIZED` | 401 | Missing or invalid Cognito token |
+| `EXTRACTION_FAILED` | 422 | BDA could not read the document (or has not run yet — `extractionStatus` says which). Per the SOW parsing failures go to the DLQ for manual resolution |
+| `NOT_SIGNED` | 422 | `obligationTracking` requested for a contract that is not `signed`; `contractStatus` included |
+| `AGENT_UNAVAILABLE` | 422 | The requested agent is not deployed yet |
+| `UNKNOWN_AGENT` | 404 | `agentType` in the URL is not one of the four |
+| `BAD_REQUEST` | 400 | Malformed `contractId`, `runId`, or request body |
+| `UNAUTHORIZED` | 401 | Missing or invalid Cognito token (returned by API Gateway, not this function) |
 
 ---
 
@@ -336,7 +348,14 @@ function-to-function, so it gets **no route**.
 | `agent-template-prepopulation` | Same as above | 300 s / 512 MB | `AURORA_*`, `MODEL_ID`, `BDA_OUTPUT_BUCKET` (to read the extraction's `result.json` for line positions) | As risk agent, plus `s3:GetObject` on `bda-output/*` |
 | `agent-summary` | Same as above | 300 s / 512 MB | `AURORA_*`, `MODEL_ID` | As risk agent |
 | `agent-obligation-tracking` | Async invoke from the signature-workflow Lambda when the last signer confirms. Payload `{"contract_id","trigger":"signature_completed"}`. Function name `rag-app-prod-agent-obligation-tracking`; the signature Lambda reads it from `OBLIGATION_AGENT_FUNCTION_NAME` and needs `lambda:InvokeFunction` on it. | 300 s / 512 MB | `AURORA_*`, `MODEL_ID` | As risk agent |
-| `analysis-api` | API Gateway, the three routes in §8 | 29 s / 256 MB | `AURORA_*`, the four agent function ARNs | `rds-data:ExecuteStatement`; `secretsmanager:GetSecretValue`; `lambda:InvokeFunction` on the four agents |
+| `analysis-api` | API Gateway, the three routes in §8 | 29 s / 256 MB | `AURORA_*` (judy-ai-writer secret), `RISK_AGENT_ARN`, `TEMPLATE_AGENT_ARN`, `SUMMARY_AGENT_ARN`, `OBLIGATION_AGENT_ARN` (leave unset until agent 4 exists; the API then answers 422 `AGENT_UNAVAILABLE` for it). Optional `IN_FLIGHT_WINDOW_SECONDS` (default 600). | `rds-data:ExecuteStatement`; `secretsmanager:GetSecretValue` on the judy-ai secret; `lambda:InvokeFunction` on the four agents |
+
+**Re-run payload.** On `POST` the API inserts a `pending` row in `agent_runs` per agent and
+invokes each agent with `{"contract_id", "extraction_id", "run_id", "trigger": "api_rerun"}`.
+The agents claim that row (`run_id`) instead of inserting their own — added to agents 1–3 on
+2026-09-26, so **they need redeploying from main** for re-run ids to line up. Until then a
+re-run still works; it just leaves the API's pending row behind, and the status route
+reports the agent's own newer row.
 
 All of these run **outside the VPC** (Data API), like the four existing functions.
 

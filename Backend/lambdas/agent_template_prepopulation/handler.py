@@ -147,7 +147,27 @@ def fetch_extraction(extraction_id):
     return text, raw_key
 
 
-def start_run(contract_id, extraction_id):
+def start_run(contract_id, extraction_id, run_id=None):
+    """Create the run row, or claim the 'pending' one the analysis API created."""
+    if run_id:
+        records = execute_sql(
+            """
+            UPDATE judy_ai.agent_runs
+               SET status = 'running', model_id = :model_id, prompt_version = :prompt_version,
+                   started_at = now()
+             WHERE id = :run_id::uuid AND agent_type = 'template_prepopulation'
+            RETURNING id::text
+            """,
+            [
+                string_param("run_id", run_id),
+                string_param("model_id", MODEL_ID),
+                string_param("prompt_version", PROMPT_VERSION),
+            ],
+        )
+        if records:
+            return records[0][0]["stringValue"]
+        print(f"run_id {run_id} not found for this agent - inserting a new run")
+
     records = execute_sql(
         """
         INSERT INTO judy_ai.agent_runs
@@ -889,9 +909,9 @@ def analyse_text(contract_text, lines_by_page):
     return detection, fields, raw, usage_total
 
 
-def analyse(contract_id, extraction_id):
+def analyse(contract_id, extraction_id, run_id=None):
     contract_text, raw_key = fetch_extraction(extraction_id)
-    run_id = start_run(contract_id, extraction_id)
+    run_id = start_run(contract_id, extraction_id, run_id)
     print(f"Run {run_id} started for contract {contract_id}")
 
     started = time.time()
@@ -924,4 +944,6 @@ def lambda_handler(event, context):
     if not contract_id or not extraction_id:
         raise ValueError("contract_id and extraction_id are required")
 
-    return analyse(contract_id, extraction_id)
+    # run_id is present on re-runs from analysis-api, absent on the automatic
+    # path from document_extraction.
+    return analyse(contract_id, extraction_id, event.get("run_id"))
