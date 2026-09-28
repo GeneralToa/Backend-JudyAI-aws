@@ -174,3 +174,17 @@ lambda:
       enabled: false
     eventSourceMapping:
       enabled: false
+  agentObligationTracking:
+    functionName: "agent-obligation-tracking"
+    role: "agentObligationTracking"
+    sourceCodePath: "agent_obligation_tracking/"
+    outputCodePath: "agent_obligation_tracking/function.zip"
+    handler: "handler.lambda_handler"
+    runtime: "python3.13"
+    timeout: 300
+    memorySize: 512
+    vpcConfig: false
+    lambdaLayer:
+      enabled: false
+    eventSourceMapping:
+      enabled: false

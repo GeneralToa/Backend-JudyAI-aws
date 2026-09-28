@@ -71,7 +71,19 @@ resource "aws_lambda_function" "lambda" {
   }
 
   dynamic "environment" {
-    for_each = contains(["agentRiskClause", "agentTemplatePrepopulation", "agentSummary"], each.value.role) ? [1] : []
+    for_each = contains(["agentRiskClause", "agentSummary", "agentObligationTracking"], each.value.role) ? [1] : []
+    content {
+      variables = {
+        AURORA_CLUSTER_ARN = data.aws_ssm_parameter.aurora_postgres_arn.value
+        AURORA_SECRET_ARN  = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+        AURORA_DATABASE    = "ragdb"
+        MODEL_ID           = "${local.config.bedrock.inferenceProfileId}"
+      }
+    }
+  }
+
+  dynamic "environment" {
+    for_each = each.value.role == "agentTemplatePrepopulation" ? [1] : []
     content {
       variables = {
         AURORA_CLUSTER_ARN = data.aws_ssm_parameter.aurora_postgres_arn.value
@@ -107,17 +119,25 @@ resource "aws_lambda_function" "lambda" {
     for_each = each.value.role == "analysisApi" ? [1] : []
     content {
       variables = {
-        AURORA_CLUSTER_ARN = data.aws_ssm_parameter.aurora_postgres_arn.value
-        AURORA_SECRET_ARN  = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
-        AURORA_DATABASE    = "ragdb"
-        RISK_AGENT_ARN     = "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentRiskClause.functionName}",
-        TEMPLATE_AGENT_ARN = "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentTemplatePrepopulation.functionName}",
-        SUMMARY_AGENT_ARN  = "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentSummary.functionName}"
-        #OBLIGATION_AGENT_ARN = "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentObligation.functionName}",
+        AURORA_CLUSTER_ARN   = data.aws_ssm_parameter.aurora_postgres_arn.value
+        AURORA_SECRET_ARN    = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+        AURORA_DATABASE      = "ragdb"
+        RISK_AGENT_ARN       = "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentRiskClause.functionName}",
+        TEMPLATE_AGENT_ARN   = "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentTemplatePrepopulation.functionName}",
+        SUMMARY_AGENT_ARN    = "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentSummary.functionName}"
+        OBLIGATION_AGENT_ARN = "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${local.config.lambda.agentObligationTracking.functionName}"
       }
     }
   }
 
+  dynamic "environment" {
+    for_each = each.value.role == "signatureWorkflow" ? [1] : []
+    content {
+      variables = {
+        OBLIGATION_AGENT_FUNCTION_NAME = "${local.identifier}-${local.config.lambda.agentObligationTracking.functionName}"
+      }
+    }
+  }
 
   dynamic "vpc_config" {
     for_each = try(each.value.vpcConfig, false) ? [1] : []

@@ -327,9 +327,13 @@ resource "aws_iam_policy" "document_extraction_policy" {
   })
 }
 
-# =============== AGENT RISK CLAUSE POLICY =================
-resource "aws_iam_policy" "agent_risk_clause_policy" {
-  name = "${local.identifier}-agent-risk-clause-policy"
+# =============== AGENTS POLICY =================
+resource "aws_iam_policy" "agent_policy" {
+  for_each = {
+    for lambda_key, lambda in try(local.config.lambda, {}) : lambda_key => lambda
+    if contains(["agentRiskClause", "agentSummary", "agentObligationTracking"], lambda.role)
+  }
+  name = "${local.identifier}-${each.value.functionName}-policy"
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -454,48 +458,17 @@ resource "aws_iam_policy" "signature_workflow_policy" {
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
         Resource = data.aws_ssm_parameter.app_writer_secret_arn.value
-      }
-    ]
-  })
-}
-
-# =============== AGENT SUMMARY POLICY =================
-resource "aws_iam_policy" "agent_summary_policy" {
-  name = "${local.identifier}-agent-summary-policy"
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
-        Resource = "*"
       },
       {
         Effect = "Allow"
         Action = [
-          "bedrock:GetInferenceProfile"
+          "lambda:InvokeFunction"
         ]
-        Resource = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:inference-profile/${local.config.bedrock.inferenceProfileId}"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "kms:Decrypt",
-          "kms:GenerateDataKey",
+        Resource = [
+          for lambda_key, lambda in try(local.config.lambda, {}) :
+          "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${lambda.functionName}"
+          if contains(["agentObligationTracking"], lambda.role)
         ]
-        Resource = data.aws_ssm_parameter.kms_aurora_postgres_arn.value
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "rds-data:ExecuteStatement"
-        ]
-        Resource = data.aws_ssm_parameter.aurora_postgres_arn.value
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
-        Resource = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
       }
     ]
   })
@@ -628,13 +601,13 @@ resource "aws_iam_role_policy_attachment" "lambda_document_extraction_role_att" 
   policy_arn = aws_iam_policy.document_extraction_policy.arn
 }
 
-resource "aws_iam_role_policy_attachment" "lambda_agent_risk_clause_role_att" {
+resource "aws_iam_role_policy_attachment" "lambda_agents_role_att" {
   for_each = {
-    for lambda_key, lambda_conf in try(local.config.lambda, []) : lambda_key => lambda_conf
-    if lambda_conf.role == "agentRiskClause"
+    for lambda_key, lambda in try(local.config.lambda, {}) : lambda_key => lambda
+    if contains(["agentRiskClause", "agentSummary", "agentObligationTracking"], lambda.role)
   }
   role       = aws_iam_role.lambda_role[each.key].name
-  policy_arn = aws_iam_policy.agent_risk_clause_policy.arn
+  policy_arn = aws_iam_policy.agent_policy[each.key].arn
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_agent_template_prepopulation_role_att" {
@@ -655,14 +628,6 @@ resource "aws_iam_role_policy_attachment" "lambda_signature_workflow_role_att" {
   policy_arn = aws_iam_policy.signature_workflow_policy.arn
 }
 
-resource "aws_iam_role_policy_attachment" "lambda_agent_summary_role_att" {
-  for_each = {
-    for lambda_key, lambda_conf in try(local.config.lambda, []) : lambda_key => lambda_conf
-    if lambda_conf.role == "agentSummary"
-  }
-  role       = aws_iam_role.lambda_role[each.key].name
-  policy_arn = aws_iam_policy.agent_summary_policy.arn
-}
 
 resource "aws_iam_role_policy_attachment" "lambda_analysis_api_role_att" {
   for_each = {
