@@ -92,10 +92,14 @@ def main():
                 f = items[0]
                 assert {"fieldType", "label", "signerRole", "page", "position", "isRequired"} <= set(f)
                 assert f["fieldType"] in ("signature", "initial", "date", "fullName", "title", "company", "text")
+                # JSONB must reach the UI as an object, not a string (the Data API returns text)
+                assert isinstance(f["position"], dict) and {"x", "y", "width", "height"} <= set(f["position"]), \
+                    f"position is {type(f['position']).__name__}: {f['position']!r}"
                 print(f"      type {body['detectedTemplateType']}; first field {f['fieldType']} '{f['label']}' "
                       f"{f['position']}")
             if route_agent == "summary":
-                assert body["summaryText"] and isinstance(body["keyPoints"], list)
+                assert body["summaryText"] and isinstance(body["keyPoints"], list) \
+                    and all(isinstance(k, str) for k in body["keyPoints"])
                 print(f"      {body['wordCount']} words; first point: {body['keyPoints'][0][:80]}")
 
     # --- obligation tracking: not run yet -> 409 with status ---

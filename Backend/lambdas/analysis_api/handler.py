@@ -292,10 +292,24 @@ def fields_for(run_id):
             "label": r.get("label"),
             "signerRole": r.get("signer_role"),
             "page": r.get("page"),
-            "position": r.get("position"),   # already {x, y, width, height} JSON
+            "position": jsonb(r.get("position")),   # {x, y, width, height} or null
             "isRequired": bool(r.get("is_required", True)),
         } for r in rows],
     }
+
+
+def jsonb(value):
+    """
+    The Data API's formatRecordsAs=JSON returns JSONB columns as strings, so a
+    position stored as {"x":..} would reach the UI as "{\\"x\\":..}" unless
+    decoded here. Found by calling the live API the way the interface does.
+    """
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    return value
 
 
 def summary_for(run_id):
@@ -306,9 +320,7 @@ def summary_for(run_id):
     if not rows:
         return {"summaryText": None, "keyPoints": [], "wordCount": None}
     s = rows[0]
-    key_points = s.get("key_points") or []
-    if isinstance(key_points, str):
-        key_points = json.loads(key_points)
+    key_points = jsonb(s.get("key_points")) or []
     return {"summaryText": s["summary_text"], "keyPoints": key_points, "wordCount": s.get("word_count")}
 
 
