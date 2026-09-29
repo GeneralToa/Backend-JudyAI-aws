@@ -508,7 +508,7 @@ resource "aws_iam_policy" "analysis_api_policy" {
         Resource = [
           for lambda_key, lambda in try(local.config.lambda, {}) :
           "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${lambda.functionName}"
-          if contains(["agentRiskClause", "agentTemplatePrepopulation", "agentSummary"], lambda.role)
+          if contains(["agentRiskClause", "agentTemplatePrepopulation", "agentSummary", "agentObligationTracking"], lambda.role)
         ]
       }
     ]

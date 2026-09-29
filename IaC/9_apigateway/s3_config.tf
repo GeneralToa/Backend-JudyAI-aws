@@ -17,5 +17,5 @@ resource "aws_s3_object" "config_js" {
   bucket       = data.aws_s3_bucket.s3_bucket.id
   key          = "config.js"
   content      = local_file.config_js.content
-  content_type = "application/javascript"
+  content_type = "text/javascript"
 }

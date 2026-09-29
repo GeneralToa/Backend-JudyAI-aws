@@ -58,6 +58,13 @@ apiGateway:
         integrationMethod: "POST"
         authRequired: true
         timeoutMilliseconds: 29000
+      filesDocumentIdDownloadGet:
+        functionName: "data-processor"
+        path: "/files/{documentId}/download"
+        method: "GET"
+        integrationMethod: "GET"
+        authRequired: true
+        timeoutMilliseconds: 29000
       filesDocumentIdDelete:
         functionName: "data-processor"
         path: "/files/{documentId}"
