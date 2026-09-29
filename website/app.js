@@ -824,7 +824,7 @@ document.addEventListener("DOMContentLoaded", () => {
         list.innerHTML = contracts.map(f => {
             const status = f.contract_status || "uploaded";
             return `<div class="dashboard-item dashboard-item-clickable"
-                        onclick="window.location.href='review.html?contractId=${f.contract_id}&name=${encodeURIComponent(f.document_name)}&status=${status}'">
+                        onclick="window.location.href='review.html?contractId=${f.contract_id}&documentId=${f.document_id}&name=${encodeURIComponent(f.document_name)}&status=${status}'">
                 <div class="dashboard-item-left">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.5;flex-shrink:0">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -1132,7 +1132,7 @@ document.addEventListener("DOMContentLoaded", () => {
                                 <span class="col-name-inner">
                                     ${fileIcon}
                                     <span class="col-name-text">
-                                        <span class="col-name-label contract-name-link" data-contract-id="${contractId}" data-name="${encodeURIComponent(f.document_name)}" data-status="${status}" style="${hasContractId ? 'cursor:pointer' : ''}">${escapeHtml(f.document_name)}</span>
+                                        <span class="col-name-label contract-name-link" data-contract-id="${contractId}" data-document-id="${f.document_id}" data-name="${encodeURIComponent(f.document_name)}" data-status="${status}" style="${hasContractId ? 'cursor:pointer' : ''}">${escapeHtml(f.document_name)}</span>
                                         ${hasContractId ? `<span class="analysis-status-line" id="analysis-status-${contractId}"><span class="analysis-status-loading">Loading analysis...</span></span>` : ""}
                                     </span>
                                 </span>
@@ -1179,7 +1179,7 @@ document.addEventListener("DOMContentLoaded", () => {
             list.querySelectorAll(".contract-name-link").forEach(link => {
                 if (link.dataset.contractId) {
                     link.addEventListener("click", () => {
-                        window.location.href = `review.html?contractId=${link.dataset.contractId}&name=${link.dataset.name}&status=${link.dataset.status}`;
+                        window.location.href = `review.html?contractId=${link.dataset.contractId}&documentId=${link.dataset.documentId}&name=${link.dataset.name}&status=${link.dataset.status}`;
                     });
                 }
             });

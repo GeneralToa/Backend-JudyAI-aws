@@ -1,15 +1,28 @@
 // =============================================================
 // review.js — Contract Review Page
-// Reads contractId from URL, fetches analysis, renders AI panel.
-// Document rendering wired when GET /files/{id}/download is available.
+// Reads contractId + documentId from URL, fetches analysis + document.
+// PDF rendered via PDF.js. DOCX via Office Online iframe.
 // =============================================================
+
+// PDF.js — loaded from CDN
+const PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+let pdfDoc = null;
+let currentPage = 1;
+let totalPages = 0;
+let currentScale = 1.0;
+const SCALE_STEP = 0.25;
+const MIN_SCALE = 0.5;
+const MAX_SCALE = 3.0;
 
 document.addEventListener("DOMContentLoaded", () => {
     if (!isAuthenticated()) return;
 
-    // --- Parse contractId + contractName from URL ---
+    // --- Parse URL params ---
     const params = new URLSearchParams(window.location.search);
     const contractId = params.get("contractId");
+    const documentId = params.get("documentId");
     const contractName = params.get("name") || "Contract";
     const contractStatus = params.get("status") || "uploaded";
 
@@ -27,18 +40,156 @@ document.addEventListener("DOMContentLoaded", () => {
         window.location.href = "index.html";
     });
 
-    // --- Render header actions + action bar based on status ---
+    // --- Render header actions + action bar ---
     renderActions(contractId, contractName, contractStatus);
 
-    // --- Load analysis (summary + risks in parallel) ---
+    // --- Load analysis ---
     loadAnalysis(contractId, contractStatus);
 
-    // --- Document viewer placeholder (Andres endpoint pending) ---
-    showPlaceholder(
-        "Document viewer coming soon",
-        "Waiting for the download endpoint to be available. The document will render here automatically once deployed."
-    );
+    // --- Load document ---
+    if (documentId) {
+        loadDocument(documentId, decodeURIComponent(contractName));
+    } else {
+        showPlaceholder(
+            "Document viewer unavailable",
+            "Document ID not found. Try navigating from the Contracts list."
+        );
+    }
+
+    // --- Toolbar buttons ---
+    document.getElementById("btn-prev-page").addEventListener("click", () => {
+        if (currentPage > 1) renderPage(--currentPage);
+    });
+    document.getElementById("btn-next-page").addEventListener("click", () => {
+        if (currentPage < totalPages) renderPage(++currentPage);
+    });
+    document.getElementById("btn-zoom-in").addEventListener("click", () => {
+        if (currentScale < MAX_SCALE) {
+            currentScale = Math.min(MAX_SCALE, currentScale + SCALE_STEP);
+            renderPage(currentPage);
+        }
+    });
+    document.getElementById("btn-zoom-out").addEventListener("click", () => {
+        if (currentScale > MIN_SCALE) {
+            currentScale = Math.max(MIN_SCALE, currentScale - SCALE_STEP);
+            renderPage(currentPage);
+        }
+    });
 });
+
+// =============================================================
+// Document Loading
+// =============================================================
+async function loadDocument(documentId, filename) {
+    try {
+        // Fetch presigned URL from backend
+        const res = await fetch(`${CONFIG.API_BASE_URL}/files/${documentId}/download`, {
+            headers: { Authorization: getIdToken() },
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showPlaceholder("Could not load document", err.error || `Error ${res.status}`);
+            return;
+        }
+
+        const data = await res.json();
+        const url = data.download_url;
+
+        // Determine file type from filename
+        const ext = filename.split(".").pop().toLowerCase();
+
+        if (ext === "pdf") {
+            loadPdf(url);
+        } else if (ext === "docx" || ext === "doc") {
+            loadDocx(url);
+        } else {
+            // Try PDF first, fallback to iframe
+            loadPdf(url);
+        }
+
+    } catch (err) {
+        showPlaceholder("Could not load document", err.message);
+    }
+}
+
+// --- PDF via PDF.js ---
+function loadPdf(url) {
+    const script = document.createElement("script");
+    script.src = PDFJS_CDN;
+    script.onload = () => {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+
+        showPlaceholder("Loading document...", "");
+
+        window.pdfjsLib.getDocument({ url }).promise.then(pdf => {
+            pdfDoc = pdf;
+            totalPages = pdf.numPages;
+            currentPage = 1;
+
+            // Hide placeholder, show canvas
+            document.getElementById("review-doc-placeholder").classList.add("hidden");
+            document.getElementById("review-pdf-canvas").classList.remove("hidden");
+
+            // Enable nav buttons
+            document.getElementById("btn-prev-page").disabled = false;
+            document.getElementById("btn-next-page").disabled = false;
+
+            updatePageIndicator();
+            renderPage(currentPage);
+        }).catch(err => {
+            showPlaceholder("Could not render PDF", err.message);
+        });
+    };
+    script.onerror = () => showPlaceholder("Could not load PDF viewer", "PDF.js failed to load.");
+    document.head.appendChild(script);
+}
+
+function renderPage(pageNum) {
+    if (!pdfDoc) return;
+
+    pdfDoc.getPage(pageNum).then(page => {
+        const canvas = document.getElementById("review-pdf-canvas");
+        const ctx = canvas.getContext("2d");
+
+        const viewport = page.getViewport({ scale: currentScale });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        page.render({ canvasContext: ctx, viewport }).promise.then(() => {
+            currentPage = pageNum;
+            updatePageIndicator();
+            updateZoomLabel();
+
+            // Update nav button states
+            document.getElementById("btn-prev-page").disabled = currentPage <= 1;
+            document.getElementById("btn-next-page").disabled = currentPage >= totalPages;
+        });
+    });
+}
+
+function updatePageIndicator() {
+    document.getElementById("page-num").textContent = currentPage;
+    document.getElementById("page-count").textContent = totalPages;
+}
+
+function updateZoomLabel() {
+    document.getElementById("zoom-level").textContent = `${Math.round(currentScale * 100)}%`;
+}
+
+// --- DOCX via Office Online ---
+function loadDocx(url) {
+    document.getElementById("review-doc-placeholder").classList.add("hidden");
+    const iframe = document.getElementById("review-docx-iframe");
+    iframe.src = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`;
+    iframe.classList.remove("hidden");
+
+    // Hide page nav (not applicable for DOCX)
+    document.getElementById("btn-prev-page").disabled = true;
+    document.getElementById("btn-next-page").disabled = true;
+    document.getElementById("page-num").textContent = "—";
+    document.getElementById("page-count").textContent = "—";
+}
 
 // =============================================================
 // Actions — header right + bottom bar based on contract status
