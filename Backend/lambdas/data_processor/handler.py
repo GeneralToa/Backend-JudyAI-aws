@@ -305,10 +305,59 @@ def handle_api_gateway(event):
 
     if http_method == "GET" and resource == "/files":
         return handle_list_files(event)
+    elif http_method == "GET" and "/download" in resource:
+        return handle_download_file(event)
     elif http_method == "DELETE" and "/files/" in resource:
         return handle_delete_file(event)
     else:
         return response(400, {"error": f"Unsupported: {http_method} {resource}"})
+
+
+def handle_download_file(event):
+    """
+    GET /files/{documentId}/download
+    Look up s3_key from DynamoDB and return a presigned GET URL (5 min expiry).
+    """
+    path_params = event.get("pathParameters") or {}
+    document_id = path_params.get("documentId") or path_params.get("document_id", "")
+
+    if not document_id:
+        return response(400, {"error": "documentId is required"})
+
+    try:
+        result = dynamodb_client.get_item(
+            TableName=DOCUMENTS_TABLE,
+            Key={"document_id": {"S": document_id}},
+        )
+
+        if "Item" not in result:
+            return response(404, {"error": "Document not found"})
+
+        item = result["Item"]
+        s3_key = item.get("s3_key", {}).get("S", "")
+        document_name = item.get("document_name", {}).get("S", "")
+
+        if not s3_key:
+            return response(404, {"error": "Document S3 key not found"})
+
+        presigned_url = s3_client.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": LANDING_ZONE_BUCKET,
+                "Key": s3_key,
+            },
+            ExpiresIn=300,  # 5 minutes
+        )
+
+        return response(200, {
+            "download_url": presigned_url,
+            "document_name": document_name,
+            "document_id": document_id,
+        })
+
+    except Exception as e:
+        print(f"Error generating download URL: {e}")
+        return response(500, {"error": "Failed to generate download URL"})
 
 
 def handle_list_files(event):

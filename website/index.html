@@ -46,6 +46,15 @@
             </div>
             <ul class="nav-list">
                 <li>
+                    <button id="nav-dashboard" class="nav-btn">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                            <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+                        </svg>
+                        Dashboard
+                    </button>
+                </li>
+                <li>
                     <button id="nav-upload" class="nav-btn active">
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -100,6 +109,50 @@
 
         <!-- Main Content -->
         <main class="content">
+            <!-- Dashboard Section -->
+            <section id="section-dashboard" class="section">
+                <div class="section-title-area">
+                    <h1>Dashboard</h1>
+                    <p class="section-subtitle">Contracts pending review, flagged risks, and upcoming obligations.</p>
+                </div>
+
+                <div class="dashboard-grid">
+
+                    <!-- Pending Review -->
+                    <div class="dashboard-card">
+                        <div class="dashboard-card-header">
+                            <span class="dashboard-card-title">Pending Review</span>
+                            <span id="dash-pending-count" class="dashboard-card-count hidden"></span>
+                        </div>
+                        <div id="dash-pending-list" class="dashboard-card-body">
+                            <div class="dashboard-loading"><div class="loading-spinner"></div><span>Loading...</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Flagged Risks -->
+                    <div class="dashboard-card">
+                        <div class="dashboard-card-header">
+                            <span class="dashboard-card-title">Flagged Risks</span>
+                            <span id="dash-risks-count" class="dashboard-card-count hidden"></span>
+                        </div>
+                        <div id="dash-risks-list" class="dashboard-card-body">
+                            <div class="dashboard-loading"><div class="loading-spinner"></div><span>Loading...</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Upcoming Obligations -->
+                    <div class="dashboard-card">
+                        <div class="dashboard-card-header">
+                            <span class="dashboard-card-title">Upcoming Obligations</span>
+                            <span id="dash-obligations-count" class="dashboard-card-count hidden"></span>
+                        </div>
+                        <div id="dash-obligations-list" class="dashboard-card-body">
+                            <div class="dashboard-loading"><div class="loading-spinner"></div><span>Loading...</span></div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
             <!-- Upload Section -->
             <section id="section-upload" class="section active">
                 <div class="section-title-area">
@@ -214,6 +267,12 @@
                         <p class="section-subtitle">Manage contract signing workflows.</p>
                     </div>
                     <div class="section-actions">
+                        <button id="btn-sign-selected" class="btn-primary hidden" title="Sign all selected contracts">
+                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                            </svg>
+                            <span id="btn-sign-selected-label">Sign Selected</span>
+                        </button>
                         <button id="btn-refresh-contracts" class="btn-secondary" title="Refresh">
                             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="23 4 23 10 17 10"/>
@@ -336,6 +395,43 @@
                 <button id="modal-cancel" class="btn-secondary">Cancel</button>
                 <button id="modal-confirm" class="btn-danger">Delete</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Batch Sign Result Modal -->
+    <div id="batch-result-modal" class="modal-overlay hidden">
+        <div class="modal modal-wide">
+            <div class="batch-result-header">
+                <h3>Batch Signing Complete</h3>
+            </div>
+            <div id="batch-result-body" class="batch-result-body"></div>
+            <div class="modal-actions">
+                <button id="batch-result-close" class="btn-primary">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analysis Modal -->
+    <div id="analysis-modal" class="modal-overlay hidden">
+        <div class="modal modal-analysis">
+            <div class="analysis-modal-header">
+                <div>
+                    <h3>Contract Analysis</h3>
+                    <div id="analysis-modal-filename" class="modal-filename"></div>
+                </div>
+                <button id="analysis-modal-close" class="analysis-modal-close" aria-label="Close">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="analysis-tabs">
+                <button class="analysis-tab active" data-tab="risks">Risks</button>
+                <button class="analysis-tab" data-tab="fields">Fields</button>
+                <button class="analysis-tab" data-tab="summary">Summary</button>
+                <button class="analysis-tab" data-tab="obligations">Obligations</button>
+            </div>
+            <div id="analysis-modal-body" class="analysis-modal-body"></div>
         </div>
     </div>
 
