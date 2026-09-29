@@ -66,6 +66,12 @@ MAX_CONTRACT_CHARS = int(os.environ.get("MAX_CONTRACT_CHARS", "120000"))
 # or a deliberate pre-signing preview). Never set in the deployed function.
 ALLOW_UNSIGNED = os.environ.get("ALLOW_UNSIGNED") == "1"
 
+# How long to wait for an extraction when the signing hook fires before one
+# exists (upload -> route -> sign inside a minute). Must stay well under the
+# 300 s function timeout.
+EXTRACTION_WAIT_SECONDS = int(os.environ.get("EXTRACTION_WAIT_SECONDS", "120"))
+EXTRACTION_POLL_SECONDS = 10
+
 OBLIGATION_TYPES = ("commitment", "renewal", "milestone", "other")
 RECURRENCES = ("one_time", "monthly", "quarterly", "annual")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -638,7 +644,20 @@ def analyse(contract_id, extraction_id=None, run_id=None, trigger=None):
             f"signed contracts only (trigger={trigger})"
         )
 
-    extraction_id = extraction_id or latest_extraction_id(contract_id)
+    if not extraction_id:
+        # The completion hook can fire before extraction has finished on a
+        # contract that was routed and signed straight after upload (seen on
+        # the first live test). Wait a bounded time for it rather than fail.
+        deadline = time.time() + EXTRACTION_WAIT_SECONDS
+        while True:
+            try:
+                extraction_id = latest_extraction_id(contract_id)
+                break
+            except RuntimeError:
+                if time.time() >= deadline:
+                    raise
+                print(f"No succeeded extraction yet for {contract_id}; waiting")
+                time.sleep(EXTRACTION_POLL_SECONDS)
     contract_text = fetch_extraction(extraction_id)
     run_id = start_run(contract_id, extraction_id, run_id)
     print(f"Run {run_id} started for contract {contract_id} (status {status}, trigger {trigger})")
