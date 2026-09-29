@@ -15,6 +15,13 @@ module "s3_bucket" {
       allowed_origins = ["*"]
       expose_headers  = ["ETag"]
       max_age_seconds = 3000
+    },
+    {
+      allowed_headers = ["*"]
+      allowed_methods = ["GET"]
+      allowed_origins = ["https://d8xv5mej9ouxr.cloudfront.net"]
+      expose_headers  = []
+      max_age_seconds = 3000
     }
   ] : []
   versioning = {
