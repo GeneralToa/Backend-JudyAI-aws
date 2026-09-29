@@ -483,6 +483,13 @@ resource "aws_iam_policy" "analysis_api_policy" {
       {
         Effect = "Allow"
         Action = [
+          "s3:GetObject"
+        ]
+        Resource = "${data.aws_s3_bucket.s3_bucket.arn}/bda-output/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "kms:Decrypt",
           "kms:GenerateDataKey",
         ]

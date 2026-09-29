@@ -27,7 +27,7 @@ from botocore.exceptions import ClientError
 ssm_client = boto3.client("ssm")
 bedrock_agent_client = boto3.client("bedrock-agent")
 dynamodb_client = boto3.client("dynamodb")
-s3_client = boto3.client("s3")
+s3_client = boto3.client("s3", region_name="us-west-2")
 scheduler_client = boto3.client("scheduler")
 rds_data_client = boto3.client("rds-data", region_name="us-west-2")
 
