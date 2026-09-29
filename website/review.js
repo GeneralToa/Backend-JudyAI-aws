@@ -16,6 +16,10 @@ const SCALE_STEP = 0.25;
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 3.0;
 
+// Field overlays — loaded for signer mode
+let fieldOverlays = []; // array of field objects from template-prepopulation
+let hasScrolledToBottom = false; // scroll gate for signer
+
 document.addEventListener("DOMContentLoaded", () => {
     if (!isAuthenticated()) return;
 
@@ -161,10 +165,65 @@ function renderPage(pageNum) {
             updatePageIndicator();
             updateZoomLabel();
 
+            // Draw field overlays for signer mode
+            drawFieldOverlays(ctx, canvas, pageNum);
+
             // Update nav button states
             document.getElementById("btn-prev-page").disabled = currentPage <= 1;
             document.getElementById("btn-next-page").disabled = currentPage >= totalPages;
         });
+    });
+}
+
+// =============================================================
+// Field Overlays — Step 5 (signer mode)
+// =============================================================
+async function loadFieldOverlays(contractId) {
+    try {
+        const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/analysis/template-prepopulation`, {
+            headers: { Authorization: getIdToken() },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        fieldOverlays = data.fields || [];
+    } catch (_) {
+        // non-critical
+    }
+}
+
+function drawFieldOverlays(ctx, canvas, pageNum) {
+    if (!fieldOverlays.length) return;
+
+    // Filter fields for this page (1-indexed)
+    const pageFields = fieldOverlays.filter(f => f.page === pageNum && f.position);
+
+    pageFields.forEach(f => {
+        const { x, y, width, height } = f.position;
+
+        const boxX = x * canvas.width;
+        const boxY = y * canvas.height;
+        const boxW = width * canvas.width;
+        const boxH = height * canvas.height;
+
+        // Highlight box
+        ctx.save();
+        ctx.strokeStyle = "rgba(124, 77, 255, 0.8)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.fillStyle = "rgba(124, 77, 255, 0.08)";
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+        ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+        // Label (field type)
+        if (f.fieldType) {
+            ctx.setLineDash([]);
+            ctx.fillStyle = "rgba(124, 77, 255, 0.85)";
+            const fontSize = Math.max(9, Math.min(12, boxH * 0.5));
+            ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+            ctx.fillText(f.fieldType, boxX + 4, boxY + fontSize + 2);
+        }
+
+        ctx.restore();
     });
 }
 
@@ -230,15 +289,17 @@ function renderActions(contractId, contractName, contractStatus) {
         });
 
     } else if (contractStatus === "routed_for_signature") {
-        // Signer view — can sign or decline
+        // Signer view — read-only, must scroll before signing
         headerActions.innerHTML = `
             <button id="btn-decline" class="btn-secondary btn-sm" style="color:var(--color-error);border-color:rgba(239,83,80,0.3)">
                 Decline
             </button>`;
 
         actionBar.innerHTML = `
-            <p style="font-size:0.78rem;color:var(--text-muted);margin-right:auto">Review the document above before signing.</p>
-            <button id="btn-sign-doc" class="btn-primary" style="min-width:140px">
+            <p id="scroll-gate-hint" style="font-size:0.78rem;color:var(--text-muted);margin-right:auto">
+                📄 Scroll through the document to enable signing.
+            </p>
+            <button id="btn-sign-doc" class="btn-primary" style="min-width:140px" disabled>
                 <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
                 </svg>
@@ -250,8 +311,27 @@ function renderActions(contractId, contractName, contractStatus) {
         });
 
         document.getElementById("btn-sign-doc").addEventListener("click", () => {
-            // Navigate back to main app which has the signature modal
             window.location.href = `index.html#sign-${contractId}`;
+        });
+
+        // Load field overlays from template-prepopulation
+        loadFieldOverlays(contractId);
+
+        // Scroll gate — watch the doc viewport
+        const viewport = document.getElementById("review-doc-viewport");
+        viewport.addEventListener("scroll", () => {
+            if (hasScrolledToBottom) return;
+            const atBottom = viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 40;
+            if (atBottom) {
+                hasScrolledToBottom = true;
+                const signBtn = document.getElementById("btn-sign-doc");
+                const hint = document.getElementById("scroll-gate-hint");
+                if (signBtn) {
+                    signBtn.disabled = false;
+                    signBtn.style.opacity = "1";
+                }
+                if (hint) hint.textContent = "You've reviewed the document. You can now sign.";
+            }
         });
 
     } else if (contractStatus === "signed") {
