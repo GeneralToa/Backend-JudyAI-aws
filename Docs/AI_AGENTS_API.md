@@ -129,6 +129,33 @@ GET /contracts/{contractId}/analysis
 }
 ```
 
+**Page images for the review screen — `GET /contracts/{contractId}/analysis?include=pageImages`**
+(added 2026-09-30). Adds `extraction.id` (always present) and `extraction.pageImages`:
+
+```json
+"extraction": {
+  "id": "b5021e37-...",
+  "status": "succeeded",
+  "pageCount": 5,
+  "completedAt": "2026-09-25T18:58:40Z",
+  "pageImages": [
+    { "page": 1, "url": "https://rag-app-prod-landing-zone-...s3.us-west-2.amazonaws.com/bda-output/...&X-Amz-Expires=900..." },
+    { "page": 2, "url": "..." }
+  ]
+}
+```
+
+- One image per page, rendered by Bedrock Data Automation during extraction. **Template-agent
+  field positions are measured on exactly these images**, so `x * width`, `y * height` places a
+  box with no offset.
+- URLs are presigned, valid **15 minutes**, and serve `image/jpeg` (BDA names the files `.png`
+  but writes JPEG). Re-call the route to refresh them.
+- **Empty list for PDFs.** BDA reads PDFs natively and does not rasterise them. Render the
+  original with PDF.js from `GET /files/{documentId}/download` — it runs in the browser, so the
+  file stays inside the account. Normalised field positions map onto the PDF.js page canvas the
+  same way.
+- Omit `include` on the list page: without it no URLs are generated.
+
 `status` is one of `notStarted`, `pending`, `running`, `succeeded`, `failed`.
 When `failed`, an `error` string is included on that agent. The response also carries
 `contractStatus` (the `app.contracts.status` value, e.g. `uploaded`, `routed_for_signature`,
@@ -348,7 +375,7 @@ function-to-function, so it gets **no route**.
 | `agent-template-prepopulation` | Same as above | 300 s / 512 MB | `AURORA_*`, `MODEL_ID`, `BDA_OUTPUT_BUCKET` (to read the extraction's `result.json` for line positions) | As risk agent, plus `s3:GetObject` on `bda-output/*` |
 | `agent-summary` | Same as above | 300 s / 512 MB | `AURORA_*`, `MODEL_ID` | As risk agent |
 | `agent-obligation-tracking` | Async invoke from the signature-workflow Lambda when the last signer confirms. Payload `{"contract_id","trigger":"signature_completed"}` (it finds the newest succeeded extraction itself); or from `analysis-api` with `extraction_id` + `run_id`. Refuses contracts whose `app.contracts.status` is not `signed`. Function name `rag-app-prod-agent-obligation-tracking`; the signature Lambda reads it from `OBLIGATION_AGENT_FUNCTION_NAME` and needs `lambda:InvokeFunction` on it. **Built 2026-09-26.** | 300 s / 512 MB | `AURORA_*`, `MODEL_ID`. Never set `ALLOW_UNSIGNED` in the deployed function. | As risk agent |
-| `analysis-api` | API Gateway, the three routes in §8 | 29 s / 256 MB | `AURORA_*` (judy-ai-writer secret), `RISK_AGENT_ARN`, `TEMPLATE_AGENT_ARN`, `SUMMARY_AGENT_ARN`, `OBLIGATION_AGENT_ARN` (leave unset until agent 4 exists; the API then answers 422 `AGENT_UNAVAILABLE` for it). Optional `IN_FLIGHT_WINDOW_SECONDS` (default 600). | `rds-data:ExecuteStatement`; `secretsmanager:GetSecretValue` on the judy-ai secret; `lambda:InvokeFunction` on the four agents |
+| `analysis-api` | API Gateway, the three routes in §8 | 29 s / 256 MB | `AURORA_*` (judy-ai-writer secret), `RISK_AGENT_ARN`, `TEMPLATE_AGENT_ARN`, `SUMMARY_AGENT_ARN`, `OBLIGATION_AGENT_ARN` (leave unset until agent 4 exists; the API then answers 422 `AGENT_UNAVAILABLE` for it). Optional `IN_FLIGHT_WINDOW_SECONDS` (default 600), `BDA_OUTPUT_BUCKET` (defaults to the contract's upload bucket), `PAGE_IMAGE_URL_TTL` (default 900). | `rds-data:ExecuteStatement`; `secretsmanager:GetSecretValue` on the judy-ai secret; `lambda:InvokeFunction` on the four agents; **`s3:GetObject` on `arn:aws:s3:::rag-app-prod-landing-zone-580118073904-us-west-2-an/bda-output/*`** (page-image URLs are signed with this role; without it they return 403) |
 
 **Re-run payload.** On `POST` the API inserts a `pending` row in `agent_runs` per agent and
 invokes each agent with `{"contract_id", "extraction_id", "run_id", "trigger": "api_rerun"}`.

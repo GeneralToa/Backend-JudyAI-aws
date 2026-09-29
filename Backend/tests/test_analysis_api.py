@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "lambdas", "analysis_api"))
 import handler  # noqa: E402
 
 DEFAULT_CONTRACT = "188e718e-00a9-4f32-a536-a1337bc31d5b"   # advisor-agreement.docx, analysed
+PDF_CONTRACT = os.environ.get("PDF_CONTRACT")                # a PDF contract, to check the empty-images case
 
 
 def event(method, path, route, params, body=None, query=None):
@@ -69,6 +70,32 @@ def main():
         for name, a in body["agents"].items():
             print(f"      {name:22} {a['status']:10} results={a['resultCount']}")
         assert set(body["agents"]) == {"riskClause", "templatePrepopulation", "summary", "obligationTracking"}
+
+    # --- page images for the review screen (DOCX: one per page; PDF: none) ---
+    body, ok = call("GET status ?include=pageImages (DOCX)",
+                    event("GET", base, "/contracts/{contractId}/analysis", {"contractId": cid},
+                          query={"include": "pageImages"}), 200)
+    imgs = body.get("extraction", {}).get("pageImages") if ok else None
+    ok = ok and bool(body["extraction"].get("id")) and isinstance(imgs, list) \
+        and len(imgs) == body["extraction"]["pageCount"]
+    results.append(ok)
+    if imgs:
+        import urllib.request
+        with urllib.request.urlopen(imgs[0]["url"], timeout=30) as r:
+            head = r.read(8)
+            ctype = r.headers.get("Content-Type")
+        # BDA names them .png but writes JPEG; the URL must say so.
+        img_ok = head[:3] == b"\xff\xd8\xff" and ctype == "image/jpeg"
+        results.append(img_ok)
+        print(f"      {'ok ' if img_ok else 'XX '}{len(imgs)} page URLs; page 1 opens as {ctype}, magic={head[:4].hex()}")
+    body, ok = call("GET status without include -> no pageImages",
+                    event("GET", base, "/contracts/{contractId}/analysis", {"contractId": cid}), 200)
+    results.append(ok and "pageImages" not in body["extraction"])
+    if PDF_CONTRACT:
+        body, ok = call("GET status ?include=pageImages (PDF) -> empty list",
+                        event("GET", f"/contracts/{PDF_CONTRACT}/analysis", "/contracts/{contractId}/analysis",
+                              {"contractId": PDF_CONTRACT}, query={"include": "pageImages"}), 200)
+        results.append(ok and body["extraction"].get("pageImages") == [])
 
     # --- results per agent ---
     for route_agent, key in (("risk-clause", "risks"), ("template-prepopulation", "fields"),

@@ -42,6 +42,14 @@ from botocore.exceptions import ClientError
 retry_config = Config(retries={"max_attempts": 3, "mode": "adaptive"})
 rds_data_client = boto3.client("rds-data", config=retry_config)
 lambda_client = boto3.client("lambda", config=retry_config)
+# SigV4 and the regional endpoint are required for presigned URLs that a
+# browser can open; the default global endpoint can redirect and break them.
+s3_client = boto3.client(
+    "s3",
+    region_name=os.environ.get("AWS_REGION", "us-west-2"),
+    endpoint_url=f"https://s3.{os.environ.get('AWS_REGION', 'us-west-2')}.amazonaws.com",
+    config=Config(signature_version="s3v4"),
+)
 
 # --- Environment ---
 AURORA_CLUSTER_ARN = os.environ["AURORA_CLUSTER_ARN"]
@@ -63,6 +71,11 @@ IN_FLIGHT_WINDOW_SECONDS = int(os.environ.get("IN_FLIGHT_WINDOW_SECONDS", "600")
 
 # Tests set this to exercise the POST path without firing real agents.
 DRY_RUN = os.environ.get("ANALYSIS_API_DRY_RUN") == "1"
+
+# Where document_extraction writes BDA output. When unset, the contract's own
+# upload bucket is used - today they are the same landing-zone bucket.
+BDA_OUTPUT_BUCKET = os.environ.get("BDA_OUTPUT_BUCKET")
+PAGE_IMAGE_URL_TTL = int(os.environ.get("PAGE_IMAGE_URL_TTL", "900"))
 
 # =============================================================
 # Name mappings - mirror the tables in Docs/AI_AGENTS_API.md
@@ -145,7 +158,7 @@ def api_status(db_status):
 # =============================================================
 def get_contract(contract_id):
     rows = query(
-        "SELECT id::text AS id, status FROM app.contracts WHERE id = :id::uuid",
+        "SELECT id::text AS id, status, s3_bucket FROM app.contracts WHERE id = :id::uuid",
         [p("id", contract_id)],
     )
     return rows[0] if rows else None
@@ -155,7 +168,7 @@ def latest_extraction(contract_id):
     rows = query(f"""
         SELECT id::text AS id, status, page_count,
                {ISO.format(col='completed_at')} AS completed_at,
-               error_message
+               error_message, raw_output_s3_key
           FROM judy_ai.document_extractions
          WHERE contract_id = :cid::uuid
          ORDER BY started_at DESC LIMIT 1
@@ -206,9 +219,54 @@ def result_count(db_agent, run_id):
 
 
 # =============================================================
+# Page images for the review screen
+# =============================================================
+def page_images(contract, extraction):
+    """
+    Presigned URLs for the page images BDA rendered during extraction.
+
+    BDA rasterises DOCX to one PNG per page and writes them next to its
+    result.json, under a folder named by the BDA job id (not our extraction
+    id), so the UI cannot build these paths itself - and the bucket is
+    private, so it could not open them anyway. Native PDFs are read without
+    rasterising and have no images: the list comes back empty and the UI
+    renders the original with PDF.js instead. Field positions from the
+    template agent are measured on exactly these images, so overlays line up.
+
+    Only one object is checked (page 1), which needs s3:GetObject alone; the
+    rest are presigned from the page count.
+    """
+    key = (extraction or {}).get("raw_output_s3_key") or ""
+    pages = (extraction or {}).get("page_count") or 0
+    if not key.endswith("/result.json") or pages < 1:
+        return []
+    bucket = BDA_OUTPUT_BUCKET or contract.get("s3_bucket")
+    prefix = key[: -len("result.json")] + "assets/rectified_image_"
+    try:
+        s3_client.head_object(Bucket=bucket, Key=f"{prefix}0.png")
+    except ClientError as e:
+        # 404, or 403 for a missing key without ListBucket: no images (PDF).
+        print(f"No page images for extraction {extraction.get('id')}: "
+              f"{e.response.get('Error', {}).get('Code')}")
+        return []
+    return [{
+        "page": i + 1,
+        "url": s3_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": f"{prefix}{i}.png",
+                    # Named .png and stored as binary/octet-stream, but BDA
+                    # actually writes JPEG (checked on all 11 jobs in the
+                    # account, 2026-09-30). Serve the true type.
+                    "ResponseContentType": "image/jpeg"},
+            ExpiresIn=PAGE_IMAGE_URL_TTL,
+        ),
+    } for i in range(pages)]
+
+
+# =============================================================
 # GET /contracts/{id}/analysis
 # =============================================================
-def handle_status(contract_id):
+def handle_status(contract_id, include=()):
     contract = get_contract(contract_id)
     if not contract:
         return error(404, "CONTRACT_NOT_FOUND", f"Unknown contract {contract_id}")
@@ -233,16 +291,26 @@ def handle_status(contract_id):
             entry["error"] = run["error_message"][:300]
         agents[api_name] = entry
 
+    extraction_body = {
+        "id": extraction["id"] if extraction else None,
+        "status": extraction["status"] if extraction else "notStarted",
+        "pageCount": extraction.get("page_count") if extraction else None,
+        "completedAt": extraction.get("completed_at") if extraction else None,
+        **({"error": extraction["error_message"][:300]}
+           if extraction and extraction.get("error_message") else {}),
+    }
+    # Opt-in: the list page calls this route once per row and needs no URLs;
+    # the review page asks for them with ?include=pageImages.
+    if "pageImages" in include:
+        extraction_body["pageImages"] = (
+            page_images(contract, extraction)
+            if extraction and extraction["status"] == "succeeded" else []
+        )
+
     return respond(200, {
         "contractId": contract_id,
         "contractStatus": contract["status"],
-        "extraction": {
-            "status": extraction["status"] if extraction else "notStarted",
-            "pageCount": extraction.get("page_count") if extraction else None,
-            "completedAt": extraction.get("completed_at") if extraction else None,
-            **({"error": extraction["error_message"][:300]}
-               if extraction and extraction.get("error_message") else {}),
-        },
+        "extraction": extraction_body,
         "agents": agents,
     })
 
@@ -508,7 +576,8 @@ def lambda_handler(event, context):
         if route_key == "POST /contracts/{contractId}/analysis":
             out = handle_trigger(contract_id, event.get("body"))
         elif route_key == "GET /contracts/{contractId}/analysis":
-            out = handle_status(contract_id)
+            include = ((event.get("queryStringParameters") or {}).get("include") or "").split(",")
+            out = handle_status(contract_id, include=[i.strip() for i in include if i.strip()])
         elif route_key == "GET /contracts/{contractId}/analysis/{agentType}":
             run_id = (event.get("queryStringParameters") or {}).get("runId")
             out = handle_results(contract_id, params.get("agentType", ""), run_id)
