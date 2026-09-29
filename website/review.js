@@ -1,0 +1,365 @@
+// =============================================================
+// review.js — Contract Review Page
+// Reads contractId from URL, fetches analysis, renders AI panel.
+// Document rendering wired when GET /files/{id}/download is available.
+// =============================================================
+
+document.addEventListener("DOMContentLoaded", () => {
+    if (!isAuthenticated()) return;
+
+    // --- Parse contractId + contractName from URL ---
+    const params = new URLSearchParams(window.location.search);
+    const contractId = params.get("contractId");
+    const contractName = params.get("name") || "Contract";
+    const contractStatus = params.get("status") || "uploaded";
+
+    if (!contractId) {
+        showPlaceholder("No contract selected.", "Go back and click a contract to review it.");
+        return;
+    }
+
+    // --- Set document name in header ---
+    document.getElementById("review-doc-name").textContent = decodeURIComponent(contractName);
+    document.title = `${decodeURIComponent(contractName)} — Judy.ai`;
+
+    // --- Back button ---
+    document.getElementById("btn-back").addEventListener("click", () => {
+        window.location.href = "index.html";
+    });
+
+    // --- Render header actions + action bar based on status ---
+    renderActions(contractId, contractName, contractStatus);
+
+    // --- Load analysis (summary + risks in parallel) ---
+    loadAnalysis(contractId, contractStatus);
+
+    // --- Document viewer placeholder (Andres endpoint pending) ---
+    showPlaceholder(
+        "Document viewer coming soon",
+        "Waiting for the download endpoint to be available. The document will render here automatically once deployed."
+    );
+});
+
+// =============================================================
+// Actions — header right + bottom bar based on contract status
+// =============================================================
+function renderActions(contractId, contractName, contractStatus) {
+    const headerActions = document.getElementById("review-header-actions");
+    const actionBar = document.getElementById("review-action-bar");
+
+    // Status badge in header meta
+    const metaEl = document.getElementById("review-doc-meta");
+    metaEl.innerHTML = `<span class="contract-status ${contractStatus}" style="font-size:0.7rem;padding:2px 8px;">${contractStatus.replace(/_/g, " ")}</span>`;
+
+    if (contractStatus === "uploaded" || contractStatus === "analyzing" || contractStatus === "ready_for_review") {
+        // Owner view — can send for signature
+        headerActions.innerHTML = `
+            <button id="btn-download" class="btn-secondary btn-sm" disabled title="Download (coming soon)">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Download
+            </button>`;
+
+        // Risk count will be injected into the action bar after analysis loads
+        actionBar.innerHTML = `
+            <span id="action-bar-risk" class="action-bar-risk hidden"></span>
+            <button id="btn-send-for-sig" class="btn-primary" style="min-width:180px">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="22" y1="2" x2="11" y2="13"/>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+                Send for Signature
+            </button>`;
+
+        document.getElementById("btn-send-for-sig").addEventListener("click", () => {
+            openRouteModal(contractId, decodeURIComponent(contractName));
+        });
+
+    } else if (contractStatus === "routed_for_signature") {
+        // Signer view — can sign or decline
+        headerActions.innerHTML = `
+            <button id="btn-decline" class="btn-secondary btn-sm" style="color:var(--color-error);border-color:rgba(239,83,80,0.3)">
+                Decline
+            </button>`;
+
+        actionBar.innerHTML = `
+            <p style="font-size:0.78rem;color:var(--text-muted);margin-right:auto">Review the document above before signing.</p>
+            <button id="btn-sign-doc" class="btn-primary" style="min-width:140px">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                </svg>
+                Sign Document
+            </button>`;
+
+        document.getElementById("btn-decline").addEventListener("click", () => {
+            showToast("Decline flow coming soon.", "info");
+        });
+
+        document.getElementById("btn-sign-doc").addEventListener("click", () => {
+            // Navigate back to main app which has the signature modal
+            window.location.href = `index.html#sign-${contractId}`;
+        });
+
+    } else if (contractStatus === "signed") {
+        headerActions.innerHTML = `<span class="contract-status signed" style="font-size:0.78rem;padding:4px 12px">✓ Signed</span>`;
+        actionBar.innerHTML = `
+            <button id="btn-view-obligations" class="btn-secondary" onclick="window.location.href='index.html'">
+                View Obligations
+            </button>`;
+    }
+}
+
+// =============================================================
+// Load Analysis — summary + risks in parallel
+// =============================================================
+async function loadAnalysis(contractId, contractStatus) {
+    const loadingEl = document.getElementById("review-ai-loading");
+    const contentEl = document.getElementById("review-ai-content");
+    const errorEl = document.getElementById("review-ai-error");
+    const pendingEl = document.getElementById("review-ai-pending");
+
+    try {
+        const [summaryRes, riskRes] = await Promise.all([
+            fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/analysis/summary`, {
+                headers: { Authorization: getIdToken() },
+            }),
+            fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/analysis/risk-clause`, {
+                headers: { Authorization: getIdToken() },
+            }),
+        ]);
+
+        // Handle 409 — analysis still running
+        if (summaryRes.status === 409 || riskRes.status === 409) {
+            loadingEl.classList.add("hidden");
+            pendingEl.classList.remove("hidden");
+            return;
+        }
+
+        if (!summaryRes.ok && !riskRes.ok) {
+            throw new Error("Failed to load analysis data.");
+        }
+
+        const summaryData = summaryRes.ok ? await summaryRes.json() : null;
+        const riskData = riskRes.ok ? await riskRes.json() : null;
+
+        loadingEl.classList.add("hidden");
+        contentEl.classList.remove("hidden");
+
+        // Also fetch template type from template-prepopulation for the badge
+        fetchTemplateBadge(contractId);
+
+        renderSummary(summaryData);
+        renderRisks(riskData, contractStatus);
+
+    } catch (err) {
+        loadingEl.classList.add("hidden");
+        errorEl.classList.remove("hidden");
+        document.getElementById("review-ai-error-msg").textContent = err.message;
+    }
+}
+
+async function fetchTemplateBadge(contractId) {
+    try {
+        const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/analysis/template-prepopulation`, {
+            headers: { Authorization: getIdToken() },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.detectedTemplateType && data.detectedTemplateType !== "unknown") {
+            const badge = document.getElementById("review-template-type");
+            badge.textContent = data.detectedTemplateType.toUpperCase();
+            badge.classList.remove("hidden");
+        }
+    } catch (_) {
+        // non-critical, silently ignore
+    }
+}
+
+// =============================================================
+// Render Summary
+// =============================================================
+function renderSummary(data) {
+    const summaryEl = document.getElementById("review-summary-text");
+    const keyPointsEl = document.getElementById("review-key-points");
+
+    if (!data || !data.summaryText) {
+        summaryEl.textContent = "Summary not available for this contract.";
+        summaryEl.style.fontStyle = "italic";
+        summaryEl.style.color = "var(--text-muted)";
+        return;
+    }
+
+    summaryEl.textContent = data.summaryText;
+
+    const keyPoints = data.keyPoints || [];
+    if (keyPoints.length > 0) {
+        keyPointsEl.innerHTML = keyPoints
+            .map(kp => `<li>${escapeHtml(kp)}</li>`)
+            .join("");
+        keyPointsEl.classList.remove("hidden");
+    }
+}
+
+// =============================================================
+// Render Risks
+// =============================================================
+function renderRisks(data, contractStatus) {
+    const risksList = document.getElementById("review-risks-list");
+    const riskBadge = document.getElementById("review-risk-badge");
+    const actionBarRisk = document.getElementById("action-bar-risk");
+
+    const risks = data?.risks || [];
+
+    // Update risk badge in AI panel header
+    if (risks.length > 0) {
+        riskBadge.textContent = `${risks.length} risk${risks.length !== 1 ? "s" : ""}`;
+        riskBadge.classList.remove("hidden");
+    }
+
+    // Update risk count on the Send for Signature button in action bar
+    if (actionBarRisk && risks.length > 0) {
+        actionBarRisk.innerHTML = `<span class="risk-count-badge">⚠ ${risks.length} risk${risks.length !== 1 ? "s" : ""}</span>`;
+        actionBarRisk.classList.remove("hidden");
+    }
+
+    if (!risks.length) {
+        risksList.innerHTML = `
+            <div class="review-no-risks">
+                <div class="review-no-risks-icon">✅</div>
+                <p>No risks flagged for this contract.</p>
+            </div>`;
+        return;
+    }
+
+    risksList.innerHTML = risks.map(r => `
+        <div class="review-risk-item">
+            <div class="review-risk-item-header">
+                <span class="review-severity review-severity-${r.severity}">${r.severity}</span>
+                <span class="review-risk-category">${formatRiskCategory(r.category)}</span>
+            </div>
+            <div class="review-risk-title">${escapeHtml(r.title)}</div>
+            <p class="review-risk-detail">${escapeHtml(r.detail)}</p>
+            ${r.sourceQuote ? `
+                <blockquote class="review-risk-quote">
+                    "${escapeHtml(r.sourceQuote)}"
+                    ${r.sourcePage ? `<span class="review-risk-page">p.${r.sourcePage}</span>` : ""}
+                </blockquote>` : ""}
+            ${r.suggestedLanguage ? `
+                <div class="review-risk-suggestion">
+                    <span class="review-risk-suggestion-label">💡 Advisory suggestion — not applied to document</span>
+                    <p class="review-risk-suggestion-text">${escapeHtml(r.suggestedLanguage)}</p>
+                </div>` : ""}
+        </div>
+    `).join("");
+}
+
+// =============================================================
+// Route Modal (Send for Signature)
+// =============================================================
+function openRouteModal(contractId, contractName) {
+    const routeModal = document.getElementById("route-modal");
+    document.getElementById("route-modal-filename").textContent = contractName;
+    document.getElementById("signer-1-email").value = "";
+    document.getElementById("signer-2-email").value = "";
+    routeModal.classList.remove("hidden");
+
+    document.getElementById("route-modal-cancel").onclick = () => routeModal.classList.add("hidden");
+    routeModal.onclick = (e) => { if (e.target === routeModal) routeModal.classList.add("hidden"); };
+
+    document.getElementById("route-modal-confirm").onclick = async () => {
+        const signer1 = document.getElementById("signer-1-email").value.trim();
+        const signer2 = document.getElementById("signer-2-email").value.trim();
+
+        if (!signer1 || !signer2) {
+            showToast("Please provide both signer emails", "error");
+            return;
+        }
+
+        const confirmBtn = document.getElementById("route-modal-confirm");
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = "Sending...";
+
+        try {
+            const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/route`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: getIdToken(),
+                },
+                body: JSON.stringify({
+                    signers: [
+                        { email: signer1, role: "supplier" },
+                        { email: signer2, role: "company" },
+                    ],
+                }),
+            });
+
+            if (!res.ok) throw new Error("Failed to route contract");
+
+            routeModal.classList.add("hidden");
+            showToast("Contract sent for signature!", "success");
+
+            // Update status in URL and re-render actions
+            setTimeout(() => {
+                window.location.href = `index.html`;
+            }, 1200);
+
+        } catch (err) {
+            showToast(`Error: ${err.message}`, "error");
+        } finally {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = "Send for Signature";
+        }
+    };
+}
+
+// =============================================================
+// Document Placeholder
+// =============================================================
+function showPlaceholder(title, sub) {
+    const placeholder = document.getElementById("review-doc-placeholder");
+    if (placeholder) {
+        document.getElementById("placeholder-text").textContent = title;
+        document.getElementById("placeholder-sub").textContent = sub;
+        placeholder.classList.remove("hidden");
+    }
+}
+
+// =============================================================
+// Utilities
+// =============================================================
+function formatRiskCategory(cat) {
+    const map = {
+        unusualTerm: "Unusual Term",
+        missingClause: "Missing Clause",
+        dateMismatch: "Date Mismatch",
+        complianceGap: "Compliance Gap",
+        trackedTerm: "Tracked Term",
+    };
+    return map[cat] || cat || "";
+}
+
+function escapeHtml(text) {
+    if (!text) return "";
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showToast(message, type = "info") {
+    const container = document.getElementById("toast-container");
+    if (!container) return;
+    const toast = document.createElement("div");
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transform = "translateX(20px)";
+        toast.style.transition = "all 0.3s ease";
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
