@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Great+Vibes&family=Pacifico&family=Caveat:wght@700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/svg+xml" href="logo-color.svg">
 </head>
 <body class="review-page">
@@ -188,6 +189,43 @@
             <div class="modal-actions">
                 <button id="route-modal-cancel" class="btn-secondary">Cancel</button>
                 <button id="route-modal-confirm" class="btn-primary">Send for Signature</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signature Modal -->
+    <div id="review-signature-modal" class="modal-overlay hidden">
+        <div class="modal modal-wide">
+            <h3>Sign Document</h3>
+            <div id="review-signature-modal-filename" class="modal-filename"></div>
+
+            <!-- Tabs -->
+            <div class="sig-tabs">
+                <button class="sig-tab active" data-tab="draw">Draw</button>
+                <button class="sig-tab" data-tab="type">Type</button>
+            </div>
+
+            <!-- Draw Tab -->
+            <div id="review-sig-tab-draw" class="sig-tab-content">
+                <canvas id="review-signature-canvas" width="500" height="150" class="signature-canvas"></canvas>
+                <button id="review-btn-clear-signature" class="btn-secondary btn-sm" style="margin-top:8px">Clear</button>
+            </div>
+
+            <!-- Type Tab -->
+            <div id="review-sig-tab-type" class="sig-tab-content hidden">
+                <input type="text" id="review-signature-text" placeholder="Type your name" class="input-field sig-text-input">
+                <div class="sig-font-options">
+                    <button class="sig-font-btn active" data-font="Dancing Script">Dancing Script</button>
+                    <button class="sig-font-btn" data-font="Great Vibes">Great Vibes</button>
+                    <button class="sig-font-btn" data-font="Pacifico">Pacifico</button>
+                    <button class="sig-font-btn" data-font="Caveat">Caveat</button>
+                </div>
+                <canvas id="review-signature-type-canvas" width="500" height="150" class="signature-canvas"></canvas>
+            </div>
+
+            <div class="modal-actions">
+                <button id="review-signature-modal-cancel" class="btn-secondary">Cancel</button>
+                <button id="review-signature-modal-confirm" class="btn-primary">Sign Document</button>
             </div>
         </div>
     </div>

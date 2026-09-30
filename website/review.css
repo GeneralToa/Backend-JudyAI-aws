@@ -229,7 +229,7 @@
     margin: 0 auto;
 }
 
-/* DOCX iframe */
+/* DOCX iframe (kept for future use; BDA images are used instead) */
 .review-docx-iframe {
     width: 100%;
     height: 100%;
@@ -237,6 +237,76 @@
     border: none;
     background: #fff;
     border-radius: var(--radius-md);
+}
+
+/* =============================================================
+   BDA image viewer — DOCX rendered as stacked page images
+   ============================================================= */
+
+/* Full-width column of page images that fills the viewport */
+.review-bda-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    padding-bottom: 32px;
+}
+
+/* Per-page wrapper — position:relative so the overlay layer sits on top */
+.review-bda-page {
+    position: relative;
+    display: block;
+    /* Let the image define the width; max out at viewport - padding */
+    max-width: calc(100% - 0px);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+    border-radius: 2px;
+    background: #fff;
+    line-height: 0; /* collapse the inline gap below the img */
+}
+
+/* The page image itself */
+.review-bda-img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 2px;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+/* Transparent overlay layer — same size as the image, absolute positioned */
+.review-bda-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none; /* let clicks pass through to underlying page */
+}
+
+/* =============================================================
+   Field boxes on BDA images (signer mode)
+   Mirrors the PDF canvas overlay style but uses CSS boxes
+   ============================================================= */
+.review-bda-field-box {
+    position: absolute;
+    border: 2px dashed rgba(124, 77, 255, 0.75);
+    background: rgba(124, 77, 255, 0.07);
+    border-radius: 2px;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.review-bda-field-label {
+    position: absolute;
+    top: 2px;
+    left: 4px;
+    font-size: 9px;
+    font-weight: 600;
+    font-family: Inter, sans-serif;
+    color: rgba(124, 77, 255, 0.9);
+    white-space: nowrap;
+    line-height: 1;
+    text-transform: capitalize;
+    pointer-events: none;
 }
 
 /* =============================================================
