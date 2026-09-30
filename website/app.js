@@ -55,6 +55,19 @@ document.addEventListener("DOMContentLoaded", () => {
     if (navContracts) navContracts.addEventListener("click", () => setActiveSection("contracts"));
     if (navDashboard) navDashboard.addEventListener("click", () => setActiveSection("dashboard"));
 
+    // --- Read ?section= param on load to support redirects from other pages ---
+    const initParams = new URLSearchParams(window.location.search);
+    const initSection = initParams.get("section");
+    const initAction = initParams.get("action");
+    if (initSection) {
+        if (initSection === "contracts" && initAction === "signed") {
+            // Coming from a sign — wait briefly for Aurora to settle before loading
+            setTimeout(() => setActiveSection("contracts"), 800);
+        } else {
+            setActiveSection(initSection);
+        }
+    }
+
     // Logout with confirmation
     const logoutModal = document.getElementById("logout-modal");
     const logoutCancel = document.getElementById("logout-cancel");
