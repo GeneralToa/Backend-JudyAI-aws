@@ -139,10 +139,17 @@ async function loadAnalysis(contractId, contractStatus, documentId, filename) {
             }),
         ]);
 
-        // Handle 409 — analysis still running
+        // Handle 409 — analysis still running or failed
         if (summaryRes.status === 409 || riskRes.status === 409) {
+            const res409 = summaryRes.status === 409 ? summaryRes : riskRes;
+            const body409 = await res409.json().catch(() => ({}));
             loadingEl.classList.add("hidden");
-            pendingEl.classList.remove("hidden");
+            if (body409?.error?.status === "failed" || body409?.status === "failed") {
+                errorEl.classList.remove("hidden");
+                document.getElementById("review-ai-error-msg").textContent = "Analysis failed for this contract. Please re-upload or contact support.";
+            } else {
+                pendingEl.classList.remove("hidden");
+            }
             return;
         }
 
@@ -199,6 +206,12 @@ async function loadDocument(contractId, documentId, filename, pageImages) {
         bdaPages = [...pageImages].sort((a, b) => a.page - b.page);
         _bdaContractId = contractId;
         renderBdaImages(bdaPages);
+        return;
+    }
+
+    // DOCX with no BDA images — extraction hasn't completed yet
+    if (ext === "docx" || ext === "doc") {
+        showPlaceholder("Preview ready after extraction", "Document pages are still being processed. Check back shortly.");
         return;
     }
 
@@ -597,10 +610,14 @@ function renderActions(contractId, contractName, contractStatus) {
     const headerActions = document.getElementById("review-header-actions");
     const actionBar     = document.getElementById("review-action-bar");
 
-    const metaEl = document.getElementById("review-doc-meta");
-    metaEl.innerHTML = `<span class="contract-status ${contractStatus}" style="font-size:0.7rem;padding:2px 8px;">${contractStatus.replace(/_/g, " ")}</span>`;
+    // Fix: validate status against known values to prevent XSS via URL param
+    const KNOWN_STATUSES = ["uploaded", "analyzing", "ready_for_review", "routed_for_signature", "signed"];
+    const safeStatus = KNOWN_STATUSES.includes(contractStatus) ? contractStatus : "uploaded";
 
-    if (contractStatus === "uploaded" || contractStatus === "analyzing" || contractStatus === "ready_for_review") {
+    const metaEl = document.getElementById("review-doc-meta");
+    metaEl.innerHTML = `<span class="contract-status ${safeStatus}" style="font-size:0.7rem;padding:2px 8px;">${safeStatus.replace(/_/g, " ")}</span>`;
+
+    if (safeStatus === "uploaded" || safeStatus === "analyzing" || safeStatus === "ready_for_review") {
         headerActions.innerHTML = "";
 
         actionBar.innerHTML = `
@@ -617,7 +634,10 @@ function renderActions(contractId, contractName, contractStatus) {
             openRouteModal(contractId, decodeURIComponent(contractName));
         });
 
-    } else if (contractStatus === "routed_for_signature") {
+        // Load field overlays so sender sees field positions before routing
+        loadFieldOverlays(contractId);
+
+    } else if (safeStatus === "routed_for_signature") {
         headerActions.innerHTML = `
             <button id="btn-decline" class="btn-secondary btn-sm" style="color:var(--color-error);border-color:rgba(239,83,80,0.3)">
                 Decline
@@ -649,7 +669,7 @@ function renderActions(contractId, contractName, contractStatus) {
         // so it fires after the viewer is set up. Both call onViewportScroll()
         // which handles the scroll gate.
 
-    } else if (contractStatus === "signed") {
+    } else if (safeStatus === "signed") {
         headerActions.innerHTML = `<span class="contract-status signed" style="font-size:0.78rem;padding:4px 12px">✓ Signed</span>`;
         actionBar.innerHTML = "";
     }
