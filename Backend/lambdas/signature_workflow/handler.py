@@ -25,7 +25,7 @@ import boto3
 rds_data_client = boto3.client("rds-data", region_name="us-west-2")
 ssm_client = boto3.client("ssm", region_name="us-west-2")
 lambda_client = boto3.client("lambda", region_name="us-west-2")
-ses_client = boto3.client("sesv2", region_name="us-west-2")
+ses_client = boto3.client("sesv2", region_name="us-east-1")
 
 # --- Config ---
 OBLIGATION_AGENT_FUNCTION_NAME = os.environ.get(
