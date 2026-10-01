@@ -16,3 +16,6 @@ CREATE TABLE IF NOT EXISTS app.system_settings (
      value TEXT NOT NULL,
      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+GRANT USAGE ON SCHEMA app TO app_writer;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.system_settings TO app_writer;

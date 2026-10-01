@@ -215,7 +215,6 @@ resource "null_resource" "app_system_settings" {
         run_sql "$trimmed"
       done < "${path.module}/scripts/004_app_system_settings.sql"
 
-      run_sql "GRANT SELECT, INSERT, UPDATE, DELETE ON app.system_settings TO app_writer"
     EOT
   }
 

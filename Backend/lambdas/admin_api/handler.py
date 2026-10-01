@@ -70,16 +70,6 @@ def execute_sql(sql, parameters=None):
     return rds_data_client.execute_statement(**kwargs)
 
 
-def ensure_settings_table():
-    """Create app.system_settings table if it doesn't exist."""
-    execute_sql("""
-        CREATE TABLE IF NOT EXISTS app.system_settings (
-            key   TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )
-    """)
-
 
 def lambda_handler(event, context):
     """Route event to appropriate handler based on HTTP method and path."""
@@ -204,8 +194,6 @@ def handle_update_template(template_id, event):
 # =============================================================
 def handle_get_settings():
     """Get all system settings, filling in defaults for missing keys."""
-    ensure_settings_table()
-
     result = execute_sql("SELECT key, value FROM app.system_settings")
 
     settings = dict(DEFAULT_SETTINGS)  # start with defaults
@@ -220,8 +208,6 @@ def handle_get_settings():
 # =============================================================
 def handle_update_settings(event):
     """Upsert system settings."""
-    ensure_settings_table()
-
     body = json.loads(event.get("body") or "{}")
     settings = body.get("settings", {})
 
