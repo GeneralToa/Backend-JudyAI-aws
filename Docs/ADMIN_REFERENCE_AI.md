@@ -373,7 +373,7 @@ account.
 | Extraction batching | **Fixed and deployed 1 Oct 2026.** Up to 10 uploads per invocation are now processed in parallel (a batch takes about as long as one document), and a failing upload is retried alone: the others are removed from the queue first. Verified offline and against the live services. | Optional: enable `ReportBatchItemFailures` on the event source mapping; the handler is correct with or without it | Infrastructure (deploy) |
 | Dead-letter retention | **Done 1 Oct 2026:** 14 days, so a failure over a weekend is still there to resolve | — | Infrastructure (done) |
 | Playbook rules packaging | **Fixed 1 Oct 2026:** the agent's copy is committed, written by `build_rules.py` with the source, and checked by `test_playbook_rules_in_sync.py` | — | AI (done) |
-| Bedrock permission scope | Agent roles may invoke any Bedrock model | Restrict `bedrock:InvokeModel` to the Nova Pro inference profile and its foundation models | Infrastructure |
+| Bedrock permission scope | Agent roles may invoke any Bedrock model | **Kept open by decision (2 Oct 2026):** Judy may switch to another model, so the permission is not tied to Nova Pro. Changing models is then a `MODEL_ID` change only (section 6.5). | — |
 | Alarms | None | Alarms on Lambda errors for the six AI functions and on DLQ depth > 0 | Infrastructure |
 | Model quotas | Not load-tested | Bedrock request and token quotas for Nova Pro are the real ceiling under load; check them in Service Quotas before a large batch | Infrastructure |
 
