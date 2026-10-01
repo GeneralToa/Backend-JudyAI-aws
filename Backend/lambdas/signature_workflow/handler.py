@@ -25,12 +25,16 @@ import boto3
 rds_data_client = boto3.client("rds-data", region_name="us-west-2")
 ssm_client = boto3.client("ssm", region_name="us-west-2")
 lambda_client = boto3.client("lambda", region_name="us-west-2")
+ses_client = boto3.client("sesv2", region_name="us-west-2")
 
 # --- Config ---
 OBLIGATION_AGENT_FUNCTION_NAME = os.environ.get(
     "OBLIGATION_AGENT_FUNCTION_NAME",
     "rag-app-prod-agent-obligation-tracking",
 )
+SES_FROM_ADDRESS = os.environ.get("SES_FROM_ADDRESS", "noreply@judy.ai")
+SES_CONFIGURATION_SET = os.environ.get("SES_CONFIGURATION_SET", "rag-app-prod-notifications-config")
+APP_URL = os.environ.get("APP_URL", "https://rag-app.judy.ai")
 
 # --- SSM parameter names ---
 _AURORA_CLUSTER_ARN = None
@@ -89,6 +93,8 @@ def lambda_handler(event, context):
             return handle_get_signers(contract_id)
         elif route_key == "POST /contracts/{contractId}/sign":
             return handle_sign(contract_id, user_email, event)
+        elif route_key == "POST /contracts/{contractId}/cancel-routing":
+            return handle_cancel_routing(contract_id, user_email)
         else:
             return response(400, {"error": f"Unsupported route: {route_key}"})
     except Exception as e:
@@ -172,6 +178,24 @@ def handle_route_contract(contract_id, user_email, event):
         "UPDATE app.contracts SET status = 'routed_for_signature' WHERE id = :id::uuid",
         [{"name": "id", "value": {"stringValue": contract_id}}]
     )
+
+    # Get contract name for email notifications
+    contract_name_result = execute_sql(
+        "SELECT original_filename FROM app.contracts WHERE id = :id::uuid",
+        [{"name": "id", "value": {"stringValue": contract_id}}]
+    )
+    contract_name = contract_id  # fallback
+    if contract_name_result.get("records"):
+        contract_name = contract_name_result["records"][0][0]["stringValue"]
+
+    # Notify each signer — fire and forget, must not fail the route response
+    for signer in signers:
+        notify_signer_assigned(
+            signer_email=signer.get("email", ""),
+            signer_role=signer.get("role", ""),
+            contract_name=contract_name,
+            contract_id=contract_id,
+        )
 
     return response(200, {
         "contractId": contract_id,
@@ -337,6 +361,32 @@ def handle_sign(contract_id, user_email, event):
 
         print(f"Contract {contract_id} fully signed — completed event inserted")
 
+        # Notify the sender (uploaded_by) that all parties have signed
+        try:
+            contract_result = execute_sql(
+                "SELECT original_filename, uploaded_by FROM app.contracts WHERE id = :id::uuid",
+                [{"name": "id", "value": {"stringValue": contract_id}}]
+            )
+            if contract_result.get("records"):
+                row = contract_result["records"][0]
+                contract_name = row[0]["stringValue"]
+                sender_email  = row[1]["stringValue"] if not row[1].get("isNull") else None
+
+                # Fetch all signers for the summary
+                all_signers_result = execute_sql(
+                    "SELECT signer_email, signer_role FROM app.contract_signers WHERE contract_id = :contract_id::uuid ORDER BY signer_order ASC",
+                    [{"name": "contract_id", "value": {"stringValue": contract_id}}]
+                )
+                all_signers = [
+                    {"email": r[0]["stringValue"], "role": r[1]["stringValue"]}
+                    for r in all_signers_result.get("records", [])
+                ]
+
+                if sender_email:
+                    notify_all_signed(sender_email, contract_name, all_signers)
+        except Exception as e:
+            print(f"Warning: failed to send completion notification for contract {contract_id}: {e}")
+
         # Fire obligation agent async — fire and forget, must not fail the sign response
         try:
             lambda_client.invoke(
@@ -375,3 +425,148 @@ def response(status_code, body):
         },
         "body": json.dumps(body),
     }
+
+
+# =============================================================
+# Email Notifications via SES
+# =============================================================
+def send_email(to_address, subject, html_body):
+    """Send an email via SES. Fails silently — never blocks the main flow."""
+    try:
+        ses_client.send_email(
+            FromEmailAddress=SES_FROM_ADDRESS,
+            Destination={"ToAddresses": [to_address]},
+            Content={
+                "Simple": {
+                    "Subject": {"Data": subject, "Charset": "UTF-8"},
+                    "Body": {
+                        "Html": {"Data": html_body, "Charset": "UTF-8"},
+                        "Text": {"Data": _strip_html(html_body), "Charset": "UTF-8"},
+                    },
+                }
+            },
+            ConfigurationSetName=SES_CONFIGURATION_SET,
+        )
+        print(f"Email sent to {to_address}: {subject}")
+    except Exception as e:
+        print(f"Warning: failed to send email to {to_address}: {e}")
+
+
+def _strip_html(html):
+    """Very basic HTML stripper for plain text fallback."""
+    import re
+    return re.sub(r"<[^>]+>", "", html).strip()
+
+
+def notify_signer_assigned(signer_email, signer_role, contract_name, contract_id):
+    """Notify a signer that a contract has been assigned to them."""
+    contracts_url = f"{APP_URL}/index.html?section=contracts"
+    subject = f"Action required: Contract sent to you for signature"
+    html = f"""
+    <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">
+        <div style="background:#7c4dff;padding:24px 32px;border-radius:8px 8px 0 0">
+            <h1 style="color:#fff;font-size:20px;margin:0">Judy.ai</h1>
+        </div>
+        <div style="background:#f9f9ff;padding:32px;border-radius:0 0 8px 8px;border:1px solid #e0e0e0">
+            <h2 style="font-size:18px;margin:0 0 12px">You have a contract to sign</h2>
+            <p style="color:#444;line-height:1.6">
+                A contract has been sent to you for signature as <strong>{signer_role}</strong>.
+            </p>
+            <div style="background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:14px 18px;margin:16px 0">
+                <strong style="font-size:0.9rem">{contract_name}</strong>
+            </div>
+            <p style="color:#444;line-height:1.6">
+                Please log in to review the document and add your signature.
+            </p>
+            <a href="{contracts_url}" style="display:inline-block;background:#7c4dff;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:600;margin-top:8px">
+                Review &amp; Sign
+            </a>
+            <p style="color:#888;font-size:0.78rem;margin-top:24px">
+                If you were not expecting this email, please ignore it.
+            </p>
+        </div>
+    </div>
+    """
+    send_email(signer_email, subject, html)
+
+
+def notify_all_signed(sender_email, contract_name, signers):
+    """Notify the sender that all parties have signed."""
+    contracts_url = f"{APP_URL}/index.html?section=contracts"
+    signer_list = "".join([
+        f"<li style='margin-bottom:4px'>✓ {s.get('email','')} <span style='color:#888;font-size:0.85rem'>({s.get('role','')})</span></li>"
+        for s in signers
+    ])
+    subject = f"Contract fully signed: {contract_name}"
+    html = f"""
+    <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">
+        <div style="background:#7c4dff;padding:24px 32px;border-radius:8px 8px 0 0">
+            <h1 style="color:#fff;font-size:20px;margin:0">Judy.ai</h1>
+        </div>
+        <div style="background:#f9f9ff;padding:32px;border-radius:0 0 8px 8px;border:1px solid #e0e0e0">
+            <h2 style="font-size:18px;margin:0 0 12px">✅ Contract fully signed</h2>
+            <p style="color:#444;line-height:1.6">
+                All parties have signed <strong>{contract_name}</strong>.
+            </p>
+            <div style="background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:14px 18px;margin:16px 0">
+                <strong style="font-size:0.85rem;color:#555">Signers:</strong>
+                <ul style="margin:8px 0 0;padding-left:20px;color:#444;font-size:0.88rem">
+                    {signer_list}
+                </ul>
+            </div>
+            <a href="{contracts_url}" style="display:inline-block;background:#7c4dff;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:600;margin-top:8px">
+                View Contract
+            </a>
+        </div>
+    </div>
+    """
+    send_email(sender_email, subject, html)
+
+
+# =============================================================
+# POST /contracts/{contractId}/cancel-routing
+# Reset a stuck routed_for_signature contract back to ready_for_review.
+# Deletes all signer rows and signature events for the contract.
+# =============================================================
+def handle_cancel_routing(contract_id, user_email):
+    """Cancel routing for a contract — reset to ready_for_review."""
+    if not contract_id:
+        return response(400, {"error": "contractId is required"})
+
+    # Check contract exists and is in a routable state
+    result = execute_sql(
+        "SELECT id, status FROM app.contracts WHERE id = :id::uuid",
+        [{"name": "id", "value": {"stringValue": contract_id}}]
+    )
+    if not result.get("records"):
+        return response(404, {"error": "Contract not found"})
+
+    current_status = result["records"][0][1]["stringValue"]
+    if current_status not in ("routed_for_signature",):
+        return response(409, {"error": f"Contract cannot be cancelled from status: {current_status}. Only routed_for_signature contracts can be cancelled."})
+
+    # Delete signer rows
+    execute_sql(
+        "DELETE FROM app.contract_signers WHERE contract_id = :contract_id::uuid",
+        [{"name": "contract_id", "value": {"stringValue": contract_id}}]
+    )
+
+    # Delete signature events
+    execute_sql(
+        "DELETE FROM app.signature_events WHERE contract_id = :contract_id::uuid",
+        [{"name": "contract_id", "value": {"stringValue": contract_id}}]
+    )
+
+    # Reset contract status to ready_for_review
+    execute_sql(
+        "UPDATE app.contracts SET status = 'ready_for_review' WHERE id = :id::uuid",
+        [{"name": "id", "value": {"stringValue": contract_id}}]
+    )
+
+    print(f"Contract {contract_id} routing cancelled by {user_email}")
+
+    return response(200, {
+        "contractId": contract_id,
+        "status": "ready_for_review",
+        "message": "Routing cancelled. Contract is ready to be re-routed.",
+    })

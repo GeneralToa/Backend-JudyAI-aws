@@ -114,4 +114,39 @@ apiGateway:
         integrationMethod: "GET"
         authRequired: true
         timeoutMilliseconds: 29000
+      contractsCancelRoutingPost:
+        functionName: "signature-workflow"
+        path: "/contracts/{contractId}/cancel-routing"
+        method: "POST"
+        integrationMethod: "POST"
+        authRequired: true
+        timeoutMilliseconds: 29000
+      adminTemplatesGet:
+        functionName: "admin-api"
+        path: "/admin/templates"
+        method: "GET"
+        integrationMethod: "GET"
+        authRequired: true
+        timeoutMilliseconds: 29000
+      adminTemplatesPut:
+        functionName: "admin-api"
+        path: "/admin/templates/{templateId}"
+        method: "PUT"
+        integrationMethod: "POST"
+        authRequired: true
+        timeoutMilliseconds: 29000
+      adminSettingsGet:
+        functionName: "admin-api"
+        path: "/admin/settings"
+        method: "GET"
+        integrationMethod: "GET"
+        authRequired: true
+        timeoutMilliseconds: 29000
+      adminSettingsPut:
+        functionName: "admin-api"
+        path: "/admin/settings"
+        method: "PUT"
+        integrationMethod: "POST"
+        authRequired: true
+        timeoutMilliseconds: 29000
     

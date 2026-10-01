@@ -361,8 +361,22 @@ def handle_download_file(event):
 
 
 def handle_list_files(event):
-    """GET /files → Scan DynamoDB and return all documents."""
+    """
+    GET /files → Return documents visible to the logged-in user:
+      (1) contracts they uploaded, OR
+      (2) contracts where they are listed as a signer in app.contract_signers.
+
+    User email is extracted from the Cognito JWT claims in the API Gateway
+    request context. If claims are missing (e.g. local testing), falls back
+    to returning all files so dev behaviour is unchanged.
+    """
+    # --- Extract caller email from Cognito JWT claims ---
+    authorizer = event.get("requestContext", {}).get("authorizer", {})
+    claims = authorizer.get("jwt", {}).get("claims", {}) or authorizer.get("claims", {})
+    user_email = claims.get("email", "")
+
     try:
+        # --- Step 1: Scan DynamoDB for all documents ---
         items = []
         scan_kwargs = {"TableName": DOCUMENTS_TABLE}
 
@@ -374,13 +388,13 @@ def handle_list_files(event):
             else:
                 break
 
-        files = []
+        all_files = []
         for item in items:
             # Skip incomplete records (e.g., created by data_processor UpdateItem
             # without a prior data_upload PutItem)
             if "document_name" not in item:
                 continue
-            files.append({
+            all_files.append({
                 "document_id": item["document_id"]["S"],
                 "contract_id": item.get("contract_id", {}).get("S", ""),
                 "document_name": item["document_name"]["S"],
@@ -390,9 +404,40 @@ def handle_list_files(event):
                 "kb_status": item.get("kb_status", {}).get("S", "loading"),
             })
 
+        # --- Step 2: Filter by user (uploaded by me OR I'm a signer) ---
+        if user_email:
+            # Find contract_ids where this user is a signer
+            signer_contract_ids = set()
+            try:
+                signer_result = execute_sql(
+                    """
+                    SELECT DISTINCT contract_id::text
+                    FROM app.contract_signers
+                    WHERE signer_email = :email
+                    """,
+                    [{"name": "email", "value": {"stringValue": user_email}}],
+                )
+                for row in signer_result.get("records", []):
+                    signer_contract_ids.add(row[0]["stringValue"])
+                print(f"User {user_email} is a signer on {len(signer_contract_ids)} contracts")
+            except Exception as e:
+                print(f"Warning: failed to fetch signer contracts for {user_email}: {e}")
+
+            # Keep files uploaded by the user OR where they are a signer
+            files = [
+                f for f in all_files
+                if f["uploaded_by"] == user_email
+                or (f["contract_id"] and f["contract_id"] in signer_contract_ids)
+            ]
+            print(f"Filtered {len(all_files)} files to {len(files)} for user {user_email}")
+        else:
+            # No email claim — return all (fallback for local testing / missing auth)
+            print("Warning: no user_email in JWT claims, returning all files")
+            files = all_files
+
         files.sort(key=lambda f: f["upload_date"], reverse=True)
 
-        # Merge contract status from Aurora
+        # --- Step 3: Merge contract status from Aurora ---
         contract_ids = [f["contract_id"] for f in files if f["contract_id"]]
         if contract_ids:
             try:

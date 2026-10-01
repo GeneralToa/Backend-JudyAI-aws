@@ -752,22 +752,94 @@ function renderRisks(data, contractStatus) {
 // =============================================================
 // Route Modal (Send for Signature)
 // =============================================================
+const MAX_SIGNERS = 5;
+const SIGNER_ROLES = ["supplier", "company", "witness", "approver", "reviewer"];
+
+function renderSignerRows(count) {
+    const form = document.getElementById("signers-form");
+    if (!form) return;
+    form.innerHTML = "";
+    for (let i = 1; i <= count; i++) {
+        const row = document.createElement("div");
+        row.className = "signer-row";
+        row.dataset.index = i;
+        row.innerHTML = `
+            <div style="display:flex;align-items:center;gap:8px;width:100%">
+                <div style="flex:1">
+                    <label>Signer ${i}</label>
+                    <input type="email" class="input-field signer-email-input" placeholder="email@example.com" data-index="${i}">
+                </div>
+                <div style="width:130px">
+                    <label>Role</label>
+                    <select class="input-field signer-role-select" data-index="${i}" style="padding:8px">
+                        ${SIGNER_ROLES.map(r => `<option value="${r}"${i === 1 ? (r === "supplier" ? " selected" : "") : (i === 2 ? (r === "company" ? " selected" : "") : "")}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join("")}
+                    </select>
+                </div>
+                ${count > 1 ? `<button class="btn-secondary btn-sm btn-remove-signer" data-index="${i}" style="margin-top:18px;padding:6px 10px;color:var(--color-error);border-color:rgba(239,83,80,0.3)" title="Remove signer">✕</button>` : ""}
+            </div>`;
+        form.appendChild(row);
+    }
+
+    const addBtn = document.getElementById("btn-add-signer");
+    if (addBtn) addBtn.style.display = count >= MAX_SIGNERS ? "none" : "";
+
+    form.querySelectorAll(".btn-remove-signer").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const currentCount = form.querySelectorAll(".signer-row").length;
+            if (currentCount <= 1) return;
+            const emails = [...form.querySelectorAll(".signer-email-input")].map(i => i.value);
+            const roles  = [...form.querySelectorAll(".signer-role-select")].map(s => s.value);
+            const idx = parseInt(btn.dataset.index) - 1;
+            emails.splice(idx, 1);
+            roles.splice(idx, 1);
+            renderSignerRows(currentCount - 1);
+            form.querySelectorAll(".signer-email-input").forEach((inp, i) => { inp.value = emails[i] || ""; });
+            form.querySelectorAll(".signer-role-select").forEach((sel, i) => { sel.value = roles[i] || SIGNER_ROLES[i] || "supplier"; });
+        });
+    });
+}
+
 function openRouteModal(contractId, contractName) {
     const routeModal = document.getElementById("route-modal");
     document.getElementById("route-modal-filename").textContent = contractName;
-    document.getElementById("signer-1-email").value = "";
-    document.getElementById("signer-2-email").value = "";
+    renderSignerRows(2);
     routeModal.classList.remove("hidden");
+
+    const addBtn = document.getElementById("btn-add-signer");
+    if (addBtn) {
+        addBtn.onclick = () => {
+            const form = document.getElementById("signers-form");
+            const currentCount = form.querySelectorAll(".signer-row").length;
+            if (currentCount >= MAX_SIGNERS) return;
+            const emails = [...form.querySelectorAll(".signer-email-input")].map(i => i.value);
+            const roles  = [...form.querySelectorAll(".signer-role-select")].map(s => s.value);
+            renderSignerRows(currentCount + 1);
+            form.querySelectorAll(".signer-email-input").forEach((inp, i) => { inp.value = emails[i] || ""; });
+            form.querySelectorAll(".signer-role-select").forEach((sel, i) => { sel.value = roles[i] || SIGNER_ROLES[i] || "supplier"; });
+        };
+    }
 
     document.getElementById("route-modal-cancel").onclick = () => routeModal.classList.add("hidden");
     routeModal.onclick = (e) => { if (e.target === routeModal) routeModal.classList.add("hidden"); };
 
     document.getElementById("route-modal-confirm").onclick = async () => {
-        const signer1 = document.getElementById("signer-1-email").value.trim();
-        const signer2 = document.getElementById("signer-2-email").value.trim();
+        const form = document.getElementById("signers-form");
+        const emailInputs = [...form.querySelectorAll(".signer-email-input")];
+        const roleSelects = [...form.querySelectorAll(".signer-role-select")];
 
-        if (!signer1 || !signer2) {
-            showToast("Please provide both signer emails", "error");
+        const signers = emailInputs.map((inp, i) => ({
+            email: inp.value.trim(),
+            role: roleSelects[i]?.value || "supplier",
+        }));
+
+        if (signers.some(s => !s.email)) {
+            showToast("Please fill in all signer emails", "error");
+            return;
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (signers.some(s => !emailRegex.test(s.email))) {
+            showToast("One or more signer emails are invalid", "error");
             return;
         }
 
@@ -782,12 +854,7 @@ function openRouteModal(contractId, contractName) {
                     "Content-Type": "application/json",
                     Authorization: getIdToken(),
                 },
-                body: JSON.stringify({
-                    signers: [
-                        { email: signer1, role: "supplier" },
-                        { email: signer2, role: "company" },
-                    ],
-                }),
+                body: JSON.stringify({ signers }),
             });
 
             if (!res.ok) throw new Error("Failed to route contract");

@@ -135,6 +135,20 @@ resource "aws_lambda_function" "lambda" {
     content {
       variables = {
         OBLIGATION_AGENT_FUNCTION_NAME = "${local.identifier}-${local.config.lambda.agentObligationTracking.functionName}"
+        SES_FROM_ADDRESS               = "noreply@judy.ai"
+        SES_CONFIGURATION_SET          = "${local.identifier}-notifications-config"
+        APP_URL                        = "https://rag-app.judy.ai"
+      }
+    }
+  }
+
+  dynamic "environment" {
+    for_each = each.value.role == "adminApi" ? [1] : []
+    content {
+      variables = {
+        AURORA_CLUSTER_ARN = data.aws_ssm_parameter.aurora_postgres_arn.value
+        AURORA_SECRET_ARN  = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+        AURORA_DATABASE    = "ragdb"
       }
     }
   }

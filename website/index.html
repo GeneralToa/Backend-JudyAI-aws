@@ -93,6 +93,15 @@
                         Contracts
                     </button>
                 </li>
+                <li>
+                    <button id="nav-admin" class="nav-btn">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                        </svg>
+                        Admin
+                    </button>
+                </li>
             </ul>
             <div class="sidebar-footer">
                 <div class="sidebar-user" id="user-info"></div>
@@ -290,6 +299,36 @@
                     </div>
                 </div>
             </section>
+            <!-- Admin Section -->
+            <section id="section-admin" class="section">
+                <div class="section-title-area">
+                    <h1>Admin</h1>
+                    <p class="section-subtitle">Manage approval templates and system settings.</p>
+                </div>
+
+                <!-- Approval Templates -->
+                <div class="admin-card">
+                    <div class="admin-card-header">
+                        <span class="admin-card-title">Approval Templates</span>
+                        <span class="admin-card-subtitle">Configure the routing type and signer roles for each template.</span>
+                    </div>
+                    <div id="admin-templates-list" class="admin-templates-list">
+                        <div class="files-loading"><div class="loading-spinner"></div><span>Loading templates...</span></div>
+                    </div>
+                </div>
+
+                <!-- System Settings -->
+                <div class="admin-card" style="margin-top:24px">
+                    <div class="admin-card-header">
+                        <span class="admin-card-title">System Settings</span>
+                        <span class="admin-card-subtitle">Basic application configuration.</span>
+                    </div>
+                    <div id="admin-settings-form" class="admin-settings-form">
+                        <div class="files-loading"><div class="loading-spinner"></div><span>Loading settings...</span></div>
+                    </div>
+                </div>
+            </section>
+
         </main>
     </div>
 
@@ -299,16 +338,15 @@
             <h3>Send for Signature</h3>
             <p>Assign signers for this contract. The default sequential template will be applied.</p>
             <div id="route-modal-filename" class="modal-filename"></div>
-            <div class="signers-form">
-                <div class="signer-row">
-                    <label>Signer 1 (Supplier)</label>
-                    <input type="email" id="signer-1-email" placeholder="supplier@example.com" class="input-field">
-                </div>
-                <div class="signer-row">
-                    <label>Signer 2 (Company)</label>
-                    <input type="email" id="signer-2-email" placeholder="company@example.com" class="input-field">
-                </div>
+            <div id="signers-form" class="signers-form">
+                <!-- Signer rows injected dynamically by JS -->
             </div>
+            <button id="btn-add-signer" class="btn-secondary btn-sm" style="margin-top:8px;width:100%">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Add Signer
+            </button>
             <div class="modal-actions">
                 <button id="route-modal-cancel" class="btn-secondary">Cancel</button>
                 <button id="route-modal-confirm" class="btn-primary">Send for Signature</button>
@@ -419,11 +457,21 @@
                     <h3>Contract Analysis</h3>
                     <div id="analysis-modal-filename" class="modal-filename"></div>
                 </div>
-                <button id="analysis-modal-close" class="analysis-modal-close" aria-label="Close">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <button id="btn-download-analysis-pdf" class="btn-secondary btn-sm" title="Download analysis as PDF">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Download PDF
+                    </button>
+                    <button id="analysis-modal-close" class="analysis-modal-close" aria-label="Close">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
             <div class="analysis-tabs">
                 <button class="analysis-tab active" data-tab="risks">Risks</button>
