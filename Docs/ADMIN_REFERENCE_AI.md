@@ -5,7 +5,7 @@
 | Scope | The AI workstream of the SOW: document text extraction, the four AI agents, the AI data model and the AI API |
 | Audience | Administrators who deploy, configure and operate the Judy AI environment |
 | Environment | AWS account `580118073904`, region `us-west-2`, resource prefix `rag-app-prod` |
-| Version | 1.2, 1 October 2026. Every value below was read from the live environment on that date. 1.1: extraction batch handling and rules packaging fixed in code. 1.2: per-user access on the AI API. |
+| Version | 1.3, 2 October 2026. Values read from the live environment on 1 and 2 October. 1.1: extraction batch handling and rules packaging fixed. 1.2: per-user access on the AI API. 1.3: all three live; DLQ retention 14 days. |
 | Related | Infrastructure and application chapters of this reference; the API contract in [`AI_AGENTS_API.md`](AI_AGENTS_API.md) |
 
 This chapter is part of the single administrator reference document the SOW requires
@@ -77,7 +77,7 @@ All functions: Python 3.13, no VPC (database access is through the RDS Data API)
 | Upload bucket | `rag-app-prod-landing-zone-580118073904-us-west-2-an` | Only the `uploads/` prefix triggers processing. BDA output is written under `bda-output/`. SSE (AES-256), public access blocked. |
 | Upload topic | SNS `rag-app-prod-upload-assets-topic` | Raw message delivery is off: queue messages are SNS envelopes, which the extraction code unwraps. |
 | Extraction queue | SQS `rag-app-prod-document-extraction-sqs` | Visibility 360 s, retention 14 days, `maxReceiveCount` 3, encrypted. |
-| Dead-letter queue | SQS `rag-app-prod-document-extraction-sqs-dlq` | Documents that failed extraction three times. **Retention is 1 day** — see section 9. |
+| Dead-letter queue | SQS `rag-app-prod-document-extraction-sqs-dlq` | Documents that failed extraction three times. Retention 14 days (raised from 1 day on 1 Oct 2026). |
 | BDA project | `judy-ai-contract-extraction` (`…:data-automation-project/3582b7d2b55a`), ARN in SSM `/rag-app-prod/bedrock/data-automation-project-arn` | Granularity PAGE + ELEMENT + LINE, bounding boxes enabled. Managed in Terraform. Do not switch to the public default project: it returns no bounding boxes, and field placement depends on them. |
 | BDA profile | `us.data-automation-v1` | Cross-region profile; IAM evaluates it in other regions, so the policy allows it with a wildcard region. |
 | Foundation model | Amazon Nova Pro through inference profile `us.amazon.nova-pro-v1:0` | Temperature 0 in every agent. No training or fine-tuning. |
@@ -370,8 +370,8 @@ account.
 
 | Item | Today | Recommendation | Owner |
 |---|---|---|---|
-| Extraction batching | **Fixed in code 1 Oct 2026, live after the next deploy.** Up to 10 uploads per invocation are now processed in parallel (a batch takes about as long as one document), and a failing upload is retried alone: the others are removed from the queue first. Verified offline and against the live services. | Optional: enable `ReportBatchItemFailures` on the event source mapping; the handler is correct with or without it | Infrastructure (deploy) |
-| Dead-letter retention | 1 day | 14 days, so a failure over a weekend is still there to resolve, as the SOW intends | Infrastructure |
+| Extraction batching | **Fixed and deployed 1 Oct 2026.** Up to 10 uploads per invocation are now processed in parallel (a batch takes about as long as one document), and a failing upload is retried alone: the others are removed from the queue first. Verified offline and against the live services. | Optional: enable `ReportBatchItemFailures` on the event source mapping; the handler is correct with or without it | Infrastructure (deploy) |
+| Dead-letter retention | **Done 1 Oct 2026:** 14 days, so a failure over a weekend is still there to resolve | — | Infrastructure (done) |
 | Playbook rules packaging | **Fixed 1 Oct 2026:** the agent's copy is committed, written by `build_rules.py` with the source, and checked by `test_playbook_rules_in_sync.py` | — | AI (done) |
 | Bedrock permission scope | Agent roles may invoke any Bedrock model | Restrict `bedrock:InvokeModel` to the Nova Pro inference profile and its foundation models | Infrastructure |
 | Alarms | None | Alarms on Lambda errors for the six AI functions and on DLQ depth > 0 | Infrastructure |
