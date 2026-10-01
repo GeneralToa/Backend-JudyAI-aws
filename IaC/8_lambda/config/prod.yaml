@@ -188,3 +188,17 @@ lambda:
       enabled: false
     eventSourceMapping:
       enabled: false
+  adminApi:
+    functionName: "admin-api"
+    role: "adminApi"
+    sourceCodePath: "admin_api/"
+    outputCodePath: "admin_api/function.zip"
+    handler: "handler.lambda_handler"
+    runtime: "python3.13"
+    timeout: 29
+    memorySize: 256
+    vpcConfig: false
+    lambdaLayer:
+      enabled: false
+    eventSourceMapping:
+      enabled: false

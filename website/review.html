@@ -176,16 +176,15 @@
             <h3>Send for Signature</h3>
             <p>Assign signers for this contract. The default sequential template will be applied.</p>
             <div id="route-modal-filename" class="modal-filename"></div>
-            <div class="signers-form">
-                <div class="signer-row">
-                    <label>Signer 1 (Supplier)</label>
-                    <input type="email" id="signer-1-email" placeholder="supplier@example.com" class="input-field">
-                </div>
-                <div class="signer-row">
-                    <label>Signer 2 (Company)</label>
-                    <input type="email" id="signer-2-email" placeholder="company@example.com" class="input-field">
-                </div>
+            <div id="signers-form" class="signers-form">
+                <!-- Signer rows injected dynamically by JS -->
             </div>
+            <button id="btn-add-signer" class="btn-secondary btn-sm" style="margin-top:8px;width:100%">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Add Signer
+            </button>
             <div class="modal-actions">
                 <button id="route-modal-cancel" class="btn-secondary">Cancel</button>
                 <button id="route-modal-confirm" class="btn-primary">Send for Signature</button>

@@ -11,16 +11,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const navFiles = document.getElementById("nav-files");
     const navContracts = document.getElementById("nav-contracts");
     const navDashboard = document.getElementById("nav-dashboard");
+    const navAdmin = document.getElementById("nav-admin");
     const sectionUpload = document.getElementById("section-upload");
     const sectionChat = document.getElementById("section-chat");
     const sectionFiles = document.getElementById("section-files");
     const sectionContracts = document.getElementById("section-contracts");
     const sectionDashboard = document.getElementById("section-dashboard");
+    const sectionAdmin = document.getElementById("section-admin");
     const btnLogout = document.getElementById("btn-logout");
 
     function setActiveSection(sectionName) {
-        [navUpload, navChat, navFiles, navContracts, navDashboard].forEach(n => n && n.classList.remove("active"));
-        [sectionUpload, sectionChat, sectionFiles, sectionContracts, sectionDashboard].forEach(s => s && s.classList.remove("active"));
+        [navUpload, navChat, navFiles, navContracts, navDashboard, navAdmin].forEach(n => n && n.classList.remove("active"));
+        [sectionUpload, sectionChat, sectionFiles, sectionContracts, sectionDashboard, sectionAdmin].forEach(s => s && s.classList.remove("active"));
 
         if (sectionName === "upload") {
             navUpload.classList.add("active");
@@ -46,6 +48,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 sectionDashboard.classList.add("active");
                 loadDashboard();
             }
+        } else if (sectionName === "admin") {
+            if (navAdmin) navAdmin.classList.add("active");
+            if (sectionAdmin) {
+                sectionAdmin.classList.add("active");
+                loadAdminPanel();
+            }
         }
     }
 
@@ -54,6 +62,7 @@ document.addEventListener("DOMContentLoaded", () => {
     navFiles.addEventListener("click", () => setActiveSection("files"));
     if (navContracts) navContracts.addEventListener("click", () => setActiveSection("contracts"));
     if (navDashboard) navDashboard.addEventListener("click", () => setActiveSection("dashboard"));
+    if (navAdmin) navAdmin.addEventListener("click", () => setActiveSection("admin"));
 
     // --- Read ?section= param on load to support redirects from other pages ---
     const initParams = new URLSearchParams(window.location.search);
@@ -1007,6 +1016,205 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
 // =============================================================
+// Admin Panel
+// =============================================================
+function loadAdminPanel() {
+    loadAdminTemplates();
+    loadAdminSettings();
+}
+
+async function loadAdminTemplates() {
+    const container = document.getElementById("admin-templates-list");
+    if (!container) return;
+    container.innerHTML = `<div class="files-loading"><div class="loading-spinner"></div><span>Loading...</span></div>`;
+
+    try {
+        const res = await fetch(`${CONFIG.API_BASE_URL}/admin/templates`, {
+            headers: { Authorization: getIdToken() },
+        });
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const data = await res.json();
+        renderAdminTemplates(data.templates || []);
+    } catch (err) {
+        container.innerHTML = `<div class="analysis-empty analysis-error">Failed to load templates: ${err.message}</div>`;
+    }
+}
+
+function renderAdminTemplates(templates) {
+    const container = document.getElementById("admin-templates-list");
+    if (!templates.length) {
+        container.innerHTML = `<div class="analysis-empty">No templates found.</div>`;
+        return;
+    }
+
+    container.innerHTML = templates.map(t => `
+        <div class="admin-template-row" id="template-row-${t.id}">
+            <div class="admin-template-info">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                    <input type="text" class="input-field admin-template-name" value="${escapeHtml(t.name)}" data-id="${t.id}" style="width:220px;font-weight:600">
+                    ${t.isDefault ? `<span class="contract-status signed" style="font-size:0.65rem;padding:2px 8px">Default</span>` : `<button class="btn-secondary btn-sm btn-set-default" data-id="${t.id}" style="font-size:0.72rem">Set as Default</button>`}
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                    <div>
+                        <label style="font-size:0.72rem;color:var(--text-muted)">Routing Type</label>
+                        <select class="input-field admin-template-routing" data-id="${t.id}" style="padding:6px 10px;font-size:0.82rem">
+                            <option value="sequential" ${t.routingType === "sequential" ? "selected" : ""}>Sequential</option>
+                            <option value="parallel" ${t.routingType === "parallel" ? "selected" : ""}>Parallel</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:0.72rem;color:var(--text-muted)">Signer Roles (comma-separated)</label>
+                        <input type="text" class="input-field admin-template-roles" value="${escapeHtml((t.signerRoles || []).join(", "))}" data-id="${t.id}" style="width:260px;font-size:0.82rem" placeholder="e.g. supplier, company">
+                    </div>
+                    <button class="btn-primary btn-sm btn-save-template" data-id="${t.id}" style="margin-top:18px">Save</button>
+                </div>
+            </div>
+        </div>
+    `).join("");
+
+    // Set default buttons
+    container.querySelectorAll(".btn-set-default").forEach(btn => {
+        btn.addEventListener("click", () => saveTemplate(btn.dataset.id, { isDefault: true }));
+    });
+
+    // Save buttons
+    container.querySelectorAll(".btn-save-template").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const id = btn.dataset.id;
+            const name = container.querySelector(`.admin-template-name[data-id="${id}"]`).value.trim();
+            const routingType = container.querySelector(`.admin-template-routing[data-id="${id}"]`).value;
+            const rolesRaw = container.querySelector(`.admin-template-roles[data-id="${id}"]`).value;
+            const signerRoles = rolesRaw.split(",").map(r => r.trim()).filter(Boolean);
+
+            if (!name) { showAdminToast("Template name is required", "error"); return; }
+            if (!signerRoles.length) { showAdminToast("At least one signer role is required", "error"); return; }
+
+            saveTemplate(id, { name, routingType, signerRoles });
+        });
+    });
+}
+
+async function saveTemplate(templateId, updates) {
+    try {
+        const res = await fetch(`${CONFIG.API_BASE_URL}/admin/templates/${templateId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: getIdToken() },
+            body: JSON.stringify(updates),
+        });
+        if (!res.ok) throw new Error(`Failed to save (${res.status})`);
+        showAdminToast("Template saved", "success");
+        loadAdminTemplates(); // refresh
+    } catch (err) {
+        showAdminToast(`Error: ${err.message}`, "error");
+    }
+}
+
+async function loadAdminSettings() {
+    const container = document.getElementById("admin-settings-form");
+    if (!container) return;
+    container.innerHTML = `<div class="files-loading"><div class="loading-spinner"></div><span>Loading...</span></div>`;
+
+    try {
+        const res = await fetch(`${CONFIG.API_BASE_URL}/admin/settings`, {
+            headers: { Authorization: getIdToken() },
+        });
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const data = await res.json();
+        renderAdminSettings(data.settings || {});
+    } catch (err) {
+        container.innerHTML = `<div class="analysis-empty analysis-error">Failed to load settings: ${err.message}</div>`;
+    }
+}
+
+function renderAdminSettings(settings) {
+    const container = document.getElementById("admin-settings-form");
+
+    container.innerHTML = `
+        <div class="admin-settings-grid">
+            <div class="admin-setting-row">
+                <label>Application Name</label>
+                <input type="text" id="setting-app-name" class="input-field" value="${escapeHtml(settings.app_name || "Judy.ai")}" style="max-width:280px">
+            </div>
+            <div class="admin-setting-row">
+                <label>Max File Size (MB)</label>
+                <input type="number" id="setting-max-file-size" class="input-field" value="${settings.max_file_size_mb || 10}" min="1" max="100" style="max-width:100px">
+            </div>
+            <div class="admin-setting-row">
+                <label>Email Notifications</label>
+                <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+                    <label class="admin-toggle-label">
+                        <input type="checkbox" id="setting-notify-assigned" ${settings.notify_document_assigned === "true" ? "checked" : ""}>
+                        <span>Document assigned for signature</span>
+                    </label>
+                    <label class="admin-toggle-label">
+                        <input type="checkbox" id="setting-notify-completed" ${settings.notify_signature_completed === "true" ? "checked" : ""}>
+                        <span>Signature completed</span>
+                    </label>
+                    <label class="admin-toggle-label">
+                        <input type="checkbox" id="setting-notify-risk" ${settings.notify_risk_flagged === "true" ? "checked" : ""}>
+                        <span>Risk flagged by AI</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div style="margin-top:16px">
+            <button id="btn-save-settings" class="btn-primary">Save Settings</button>
+        </div>`;
+
+    document.getElementById("btn-save-settings").addEventListener("click", async () => {
+        const btn = document.getElementById("btn-save-settings");
+        btn.disabled = true;
+        btn.textContent = "Saving...";
+
+        const updated = {
+            app_name: document.getElementById("setting-app-name").value.trim() || "Judy.ai",
+            max_file_size_mb: String(document.getElementById("setting-max-file-size").value || "10"),
+            notify_document_assigned: String(document.getElementById("setting-notify-assigned").checked),
+            notify_signature_completed: String(document.getElementById("setting-notify-completed").checked),
+            notify_risk_flagged: String(document.getElementById("setting-notify-risk").checked),
+        };
+
+        try {
+            const res = await fetch(`${CONFIG.API_BASE_URL}/admin/settings`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json", Authorization: getIdToken() },
+                body: JSON.stringify({ settings: updated }),
+            });
+            if (!res.ok) throw new Error(`Failed to save (${res.status})`);
+            showAdminToast("Settings saved", "success");
+        } catch (err) {
+            showAdminToast(`Error: ${err.message}`, "error");
+        } finally {
+            btn.disabled = false;
+            btn.textContent = "Save Settings";
+        }
+    });
+}
+
+function showAdminToast(message, type = "info") {
+    const container = document.getElementById("toast-container");
+    if (!container) return;
+    const toast = document.createElement("div");
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transform = "translateX(20px)";
+        toast.style.transition = "all 0.3s ease";
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+function escapeHtml(text) {
+    if (!text) return "";
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+
+// =============================================================
 // Contracts Section — Signature Workflow
 // =============================================================
 
@@ -1159,14 +1367,17 @@ document.addEventListener("DOMContentLoaded", () => {
                                     : status === "uploaded" || status === "analyzing" || status === "ready_for_review"
                                         ? `<span class="risk-badge-placeholder" id="risk-badge-${contractId}"></span>
                                            <button class="btn-primary btn-sm btn-route" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}">Send for Signature</button>
-                                           <button class="btn-secondary btn-sm btn-view-analysis" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}" data-status="${status}">View Analysis</button>`
+                                           <button class="btn-secondary btn-sm btn-view-analysis" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}" data-status="${status}">View Analysis</button>
+                                           ${f.document_id ? `<button class="btn-secondary btn-sm btn-download-doc" data-document-id="${f.document_id}" data-filename="${escapeHtml(f.document_name)}" title="Download original document">Download</button>` : ""}`
                                         : status === "routed_for_signature"
                                             ? `<button class="btn-primary btn-sm btn-sign" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}">Sign</button>
                                                <button class="btn-secondary btn-sm btn-signers" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}">View Signers</button>
-                                               <button class="btn-secondary btn-sm btn-view-analysis" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}" data-status="${status}">View Analysis</button>`
+                                               <button class="btn-secondary btn-sm btn-view-analysis" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}" data-status="${status}">View Analysis</button>
+                                               <button class="btn-secondary btn-sm btn-cancel-routing" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}" style="color:var(--color-error);border-color:rgba(239,83,80,0.3)" title="Cancel routing and re-send to correct signers">Cancel Routing</button>`
                                             : status === "signed"
                                                 ? `<button class="btn-secondary btn-sm btn-signers" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}">View Signers</button>
-                                                   <button class="btn-secondary btn-sm btn-view-analysis" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}" data-status="${status}">View Analysis</button>`
+                                                   <button class="btn-secondary btn-sm btn-view-analysis" data-contract-id="${contractId}" data-filename="${escapeHtml(f.document_name)}" data-status="${status}">View Analysis</button>
+                                                   ${f.document_id ? `<button class="btn-secondary btn-sm btn-download-doc" data-document-id="${f.document_id}" data-filename="${escapeHtml(f.document_name)}" title="Download original document">Download</button>` : ""}`
                                                 : ``
                                 }
                             </span>
@@ -1186,6 +1397,16 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             list.querySelectorAll(".btn-view-analysis").forEach(btn => {
                 btn.addEventListener("click", () => openAnalysisModal(btn.dataset.contractId, btn.dataset.filename, btn.dataset.status));
+            });
+
+            // Cancel Routing
+            list.querySelectorAll(".btn-cancel-routing").forEach(btn => {
+                btn.addEventListener("click", () => confirmCancelRouting(btn.dataset.contractId, btn.dataset.filename));
+            });
+
+            // Download original document
+            list.querySelectorAll(".btn-download-doc").forEach(btn => {
+                btn.addEventListener("click", () => downloadOriginalDoc(btn.dataset.documentId, btn.dataset.filename));
             });
 
             // Navigate to review page on filename click
@@ -1297,6 +1518,126 @@ document.addEventListener("DOMContentLoaded", () => {
 
         analysisModalClose.addEventListener("click", () => analysisModal.classList.add("hidden"));
         analysisModal.addEventListener("click", e => { if (e.target === analysisModal) analysisModal.classList.add("hidden"); });
+
+        // Download Analysis as PDF
+        document.getElementById("btn-download-analysis-pdf").addEventListener("click", () => {
+            downloadAnalysisAsPdf();
+        });
+
+        async function downloadAnalysisAsPdf() {
+            const filename = analysisModalFilename || "contract";
+            const contractId = analysisModalContractId;
+            const contractStatus = analysisModalContractStatus;
+
+            const btn = document.getElementById("btn-download-analysis-pdf");
+            btn.disabled = true;
+            btn.textContent = "Preparing...";
+
+            try {
+                // Fetch all 4 tabs in parallel
+                const [riskRes, fieldsRes, summaryRes, obligationsRes] = await Promise.all([
+                    fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/analysis/risk-clause`, { headers: { Authorization: getIdToken() } }),
+                    fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/analysis/template-prepopulation`, { headers: { Authorization: getIdToken() } }),
+                    fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/analysis/summary`, { headers: { Authorization: getIdToken() } }),
+                    contractStatus === "signed"
+                        ? fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/analysis/obligation-tracking`, { headers: { Authorization: getIdToken() } })
+                        : Promise.resolve(null),
+                ]);
+
+                const riskData       = riskRes.ok       ? await riskRes.json()        : null;
+                const fieldsData     = fieldsRes.ok     ? await fieldsRes.json()      : null;
+                const summaryData    = summaryRes.ok    ? await summaryRes.json()     : null;
+                const obligationsData = obligationsRes && obligationsRes.ok ? await obligationsRes.json() : null;
+
+                // Build printable HTML
+                const printWindow = window.open("", "_blank");
+                if (!printWindow) {
+                    showToast("Pop-up blocked. Please allow pop-ups and try again.", "error");
+                    return;
+                }
+
+                const risks = riskData?.risks || [];
+                const fields = fieldsData?.fields || [];
+                const obligations = obligationsData?.obligations || [];
+
+                printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Analysis — ${escapeHtml(filename)}</title>
+<style>
+  body { font-family: Inter, Arial, sans-serif; font-size: 13px; color: #1a1a2e; margin: 32px; line-height: 1.5; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  h2 { font-size: 15px; margin: 24px 0 10px; border-bottom: 2px solid #7c4dff; padding-bottom: 4px; color: #7c4dff; }
+  .meta { font-size: 11px; color: #666; margin-bottom: 24px; }
+  .risk-item, .obligation-item { border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
+  .badge { display:inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 6px; }
+  .high { background: #ffebee; color: #c62828; }
+  .medium { background: #fff3e0; color: #e65100; }
+  .low { background: #e8f5e9; color: #2e7d32; }
+  .title { font-weight: 600; margin: 6px 0 4px; }
+  .detail { color: #444; margin: 4px 0; }
+  blockquote { border-left: 3px solid #7c4dff; padding: 4px 10px; margin: 6px 0; color: #555; font-style: italic; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th { background: #f5f5f5; padding: 8px; text-align: left; font-size: 12px; border: 1px solid #ddd; }
+  td { padding: 7px 8px; border: 1px solid #ddd; font-size: 12px; }
+  .summary-text { background: #f9f9ff; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+  ul { margin: 6px 0 0 16px; padding: 0; }
+  li { margin-bottom: 4px; }
+  @media print { body { margin: 16px; } }
+</style>
+</head>
+<body>
+<h1>Contract Analysis</h1>
+<div class="meta">
+  <strong>${escapeHtml(filename)}</strong> &nbsp;·&nbsp;
+  Generated ${new Date().toLocaleDateString("en-US", { year:"numeric", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" })}
+</div>
+
+<h2>Risks (${risks.length})</h2>
+${risks.length ? risks.map(r => `
+<div class="risk-item">
+  <div><span class="badge ${r.severity}">${r.severity}</span><span class="badge" style="background:#f3e5f5;color:#6a1b9a">${r.category || ""}</span></div>
+  <div class="title">${escapeHtml(r.title)}</div>
+  <div class="detail">${escapeHtml(r.detail)}</div>
+  ${r.sourceQuote ? `<blockquote>"${escapeHtml(r.sourceQuote)}"${r.sourcePage ? ` — p.${r.sourcePage}` : ""}</blockquote>` : ""}
+  ${r.suggestedLanguage ? `<div style="margin-top:6px;font-size:11px;color:#555"><strong>💡 Advisory suggestion:</strong> ${escapeHtml(r.suggestedLanguage)}</div>` : ""}
+</div>`).join("") : "<p>No risks flagged.</p>"}
+
+<h2>Summary</h2>
+${summaryData?.summaryText ? `<div class="summary-text">${escapeHtml(summaryData.summaryText)}</div>` : "<p>No summary available.</p>"}
+${summaryData?.keyPoints?.length ? `<strong>Key Points</strong><ul>${summaryData.keyPoints.map(kp => `<li>${escapeHtml(kp)}</li>`).join("")}</ul>` : ""}
+
+<h2>Fields (${fields.length})</h2>
+${fields.length ? `
+<table>
+  <tr><th>Type</th><th>Label</th><th>Role</th><th>Page</th><th>Required</th></tr>
+  ${fields.map(f => `<tr><td>${escapeHtml(f.fieldType||"")}</td><td>${escapeHtml(f.label||"")}</td><td>${escapeHtml(f.signerRole||"")}</td><td>${f.page||"—"}</td><td>${f.isRequired?"Yes":"No"}</td></tr>`).join("")}
+</table>` : "<p>No fields detected.</p>"}
+
+<h2>Obligations (${obligations.length})</h2>
+${obligations.length ? obligations.map(o => `
+<div class="obligation-item">
+  <div><span class="badge" style="background:#e8f5e9;color:#2e7d32">${escapeHtml(o.obligationType||"")}</span>${o.ownerParty ? `<span class="badge" style="background:#e3f2fd;color:#1565c0">Owner: ${escapeHtml(o.ownerParty)}</span>` : ""}${o.dueDate ? `<span class="badge" style="background:#fff3e0;color:#e65100">Due: ${escapeHtml(o.dueDate)}</span>` : ""}</div>
+  <div class="detail">${escapeHtml(o.description||"")}</div>
+  ${o.sourceQuote ? `<blockquote>"${escapeHtml(o.sourceQuote)}"</blockquote>` : ""}
+</div>`).join("") : `<p>${contractStatus !== "signed" ? "Obligations are available after the contract is signed." : "No obligations found."}</p>`}
+
+</body>
+</html>`);
+                printWindow.document.close();
+                printWindow.focus();
+                setTimeout(() => {
+                    printWindow.print();
+                }, 500);
+
+            } catch (err) {
+                showToast(`Export failed: ${err.message}`, "error");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download PDF`;
+            }
+        }
 
         document.querySelectorAll(".analysis-tab").forEach(tab => {
             tab.addEventListener("click", () => {
@@ -1510,20 +1851,96 @@ document.addEventListener("DOMContentLoaded", () => {
             selectedContractId = contractId;
             selectedContractName = filename;
             routeModalFilename.textContent = filename;
-            document.getElementById("signer-1-email").value = "";
-            document.getElementById("signer-2-email").value = "";
+            renderSignerRows(2); // start with 2 rows by default
             routeModal.classList.remove("hidden");
         }
+
+        const MAX_SIGNERS = 5;
+        const SIGNER_ROLES = ["supplier", "company", "witness", "approver", "reviewer"];
+
+        function renderSignerRows(count) {
+            const form = document.getElementById("signers-form");
+            form.innerHTML = "";
+            for (let i = 1; i <= count; i++) {
+                const row = document.createElement("div");
+                row.className = "signer-row";
+                row.dataset.index = i;
+                row.innerHTML = `
+                    <div style="display:flex;align-items:center;gap:8px;width:100%">
+                        <div style="flex:1">
+                            <label>Signer ${i}</label>
+                            <input type="email" class="input-field signer-email-input" placeholder="email@example.com" data-index="${i}">
+                        </div>
+                        <div style="width:130px">
+                            <label>Role</label>
+                            <select class="input-field signer-role-select" data-index="${i}" style="padding:8px">
+                                ${SIGNER_ROLES.map(r => `<option value="${r}"${i === 1 ? (r === "supplier" ? " selected" : "") : (i === 2 ? (r === "company" ? " selected" : "") : "")}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`).join("")}
+                            </select>
+                        </div>
+                        ${count > 1 ? `<button class="btn-secondary btn-sm btn-remove-signer" data-index="${i}" style="margin-top:18px;padding:6px 10px;color:var(--color-error);border-color:rgba(239,83,80,0.3)" title="Remove signer">✕</button>` : ""}
+                    </div>`;
+                form.appendChild(row);
+            }
+
+            // Update Add Signer button visibility
+            const addBtn = document.getElementById("btn-add-signer");
+            if (addBtn) addBtn.style.display = count >= MAX_SIGNERS ? "none" : "";
+
+            // Remove signer button events
+            form.querySelectorAll(".btn-remove-signer").forEach(btn => {
+                btn.addEventListener("click", () => {
+                    const currentCount = form.querySelectorAll(".signer-row").length;
+                    if (currentCount <= 1) return;
+                    // Save current emails/roles before re-rendering
+                    const emails = [...form.querySelectorAll(".signer-email-input")].map(i => i.value);
+                    const roles  = [...form.querySelectorAll(".signer-role-select")].map(s => s.value);
+                    const idx = parseInt(btn.dataset.index) - 1;
+                    emails.splice(idx, 1);
+                    roles.splice(idx, 1);
+                    renderSignerRows(currentCount - 1);
+                    // Restore values
+                    form.querySelectorAll(".signer-email-input").forEach((inp, i) => { inp.value = emails[i] || ""; });
+                    form.querySelectorAll(".signer-role-select").forEach((sel, i) => { sel.value = roles[i] || SIGNER_ROLES[i] || "supplier"; });
+                });
+            });
+        }
+
+        // Add Signer button
+        document.getElementById("btn-add-signer").addEventListener("click", () => {
+            const currentCount = document.getElementById("signers-form").querySelectorAll(".signer-row").length;
+            if (currentCount >= MAX_SIGNERS) return;
+            // Save current values before re-rendering
+            const form = document.getElementById("signers-form");
+            const emails = [...form.querySelectorAll(".signer-email-input")].map(i => i.value);
+            const roles  = [...form.querySelectorAll(".signer-role-select")].map(s => s.value);
+            renderSignerRows(currentCount + 1);
+            form.querySelectorAll(".signer-email-input").forEach((inp, i) => { inp.value = emails[i] || ""; });
+            form.querySelectorAll(".signer-role-select").forEach((sel, i) => { sel.value = roles[i] || SIGNER_ROLES[i] || "supplier"; });
+        });
 
         routeModalCancel.addEventListener("click", () => routeModal.classList.add("hidden"));
         routeModal.addEventListener("click", e => { if (e.target === routeModal) routeModal.classList.add("hidden"); });
 
         routeModalConfirm.addEventListener("click", async () => {
-            const signer1 = document.getElementById("signer-1-email").value.trim();
-            const signer2 = document.getElementById("signer-2-email").value.trim();
+            const form = document.getElementById("signers-form");
+            const emailInputs = [...form.querySelectorAll(".signer-email-input")];
+            const roleSelects = [...form.querySelectorAll(".signer-role-select")];
 
-            if (!signer1 || !signer2) {
-                showToast("Please provide both signer emails", "error");
+            const signers = emailInputs.map((inp, i) => ({
+                email: inp.value.trim(),
+                role: roleSelects[i]?.value || "supplier",
+            }));
+
+            // Validate — all emails must be filled
+            if (signers.some(s => !s.email)) {
+                showToast("Please fill in all signer emails", "error");
+                return;
+            }
+
+            // Validate email format
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (signers.some(s => !emailRegex.test(s.email))) {
+                showToast("One or more signer emails are invalid", "error");
                 return;
             }
 
@@ -1537,12 +1954,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         "Content-Type": "application/json",
                         Authorization: getIdToken(),
                     },
-                    body: JSON.stringify({
-                        signers: [
-                            { email: signer1, role: "supplier" },
-                            { email: signer2, role: "company" },
-                        ],
-                    }),
+                    body: JSON.stringify({ signers }),
                 });
 
                 if (!res.ok) throw new Error("Failed to route contract");
@@ -1748,6 +2160,60 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span class="signer-item-status ${s.status}">${s.status}</span>
                 </div>
             `).join("");
+        }
+
+        // =============================================================
+        // Cancel Routing
+        // =============================================================
+        async function confirmCancelRouting(contractId, filename) {
+            if (!confirm(`Cancel routing for "${filename}"?\n\nThis will remove all assigned signers and reset the contract to "Ready for Review" so you can re-send it to the correct signers.`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/cancel-routing`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: getIdToken(),
+                    },
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || "Failed to cancel routing");
+                }
+
+                showToast("Routing cancelled. Contract is ready to re-send.", "success");
+                loadContracts();
+            } catch (err) {
+                showToast(`Error: ${err.message}`, "error");
+            }
+        }
+
+        // =============================================================
+        // Download Original Document
+        // =============================================================
+        async function downloadOriginalDoc(documentId, filename) {
+            try {
+                const res = await fetch(`${CONFIG.API_BASE_URL}/files/${documentId}/download`, {
+                    headers: { Authorization: getIdToken() },
+                });
+
+                if (!res.ok) throw new Error("Failed to get download link");
+
+                const data = await res.json();
+                const a = document.createElement("a");
+                a.href = data.download_url;
+                a.download = filename;
+                a.target = "_blank";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } catch (err) {
+                showToast(`Download failed: ${err.message}`, "error");
+            }
+        }
         }
 
         // =============================================================
