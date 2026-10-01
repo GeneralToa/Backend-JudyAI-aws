@@ -549,7 +549,7 @@ resource "aws_iam_policy" "admin_api_policy" {
       {
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
-        Resource = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+        Resource = data.aws_ssm_parameter.app_writer_secret_arn.value
       },
       {
         Effect = "Allow"

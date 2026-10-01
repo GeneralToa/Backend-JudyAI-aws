@@ -147,7 +147,7 @@ resource "aws_lambda_function" "lambda" {
     content {
       variables = {
         AURORA_CLUSTER_ARN = data.aws_ssm_parameter.aurora_postgres_arn.value
-        AURORA_SECRET_ARN  = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+        AURORA_SECRET_ARN  = data.aws_ssm_parameter.app_writer_secret_arn.value
         AURORA_DATABASE    = "ragdb"
       }
     }
