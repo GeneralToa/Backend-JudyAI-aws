@@ -14,6 +14,15 @@ The contract for every shape is Docs/AI_AGENTS_API.md. JSON is camelCase,
 the database is snake_case, and the mapping tables in that document are
 authoritative - the maps at the top of this file mirror them.
 
+Access
+------
+A caller sees a contract's analysis only if they uploaded it or are one of
+its signers - the same rule GET /files applies (2026-10-01). Anyone else gets
+the same 404 as an unknown contract, so contract ids cannot be probed. A
+request without JWT claims is refused, never shown everything. Reading the
+signers needs 005_judy_ai_read_contract_signers.sql, without it only uploaders
+get through, and the refusal is logged.
+
 This function only reads and writes Postgres and fires asynchronous
 invokes. It never runs a model, so every response returns well inside the
 29-second API Gateway ceiling. Analysis starts automatically on upload
@@ -560,6 +569,41 @@ def handle_trigger(contract_id, raw_body):
 
 
 # =============================================================
+# Access
+# =============================================================
+def caller_of(event):
+    """(sub, email) from the Cognito JWT claims, lower-cased. Empty when absent."""
+    claims = (((event.get("requestContext") or {}).get("authorizer") or {}).get("jwt") or {}).get("claims") or {}
+    return (claims.get("sub") or "").strip().lower(), (claims.get("email") or "").strip().lower()
+
+
+def can_see(contract_id, sub, email):
+    """
+    The uploader or a signer of the contract. app.contracts.uploaded_by holds the
+    uploader's Cognito sub (an email is accepted too, in case the app ever stores
+    one); signers are matched by email, ignoring case, as typed when routing.
+    """
+    rows = query("SELECT uploaded_by FROM app.contracts WHERE id = :id::uuid", [p("id", contract_id)])
+    if not rows:
+        return False
+    uploader = (rows[0].get("uploaded_by") or "").strip().lower()
+    if uploader and uploader in (sub, email):
+        return True
+    if not email:
+        return False
+    try:
+        return bool(query(
+            "SELECT 1 AS ok FROM app.contract_signers "
+            "WHERE contract_id = :id::uuid AND lower(signer_email) = :email LIMIT 1",
+            [p("id", contract_id), p("email", email)],
+        ))
+    except ClientError as e:
+        print(f"ACCESS CHECK cannot read app.contract_signers - signers are refused until "
+              f"005_judy_ai_read_contract_signers.sql is applied: {e}")
+        return False
+
+
+# =============================================================
 # Entry point
 # =============================================================
 def lambda_handler(event, context):
@@ -573,7 +617,12 @@ def lambda_handler(event, context):
         return error(400, "BAD_REQUEST", "contractId must be a UUID")
 
     try:
-        if route_key == "POST /contracts/{contractId}/analysis":
+        sub, email = caller_of(event)
+        if not can_see(contract_id, sub, email):
+            # Same answer as an unknown contract, so ids cannot be probed.
+            print(f"ACCESS refused: sub={sub or '-'} email={email or '-'} contract={contract_id}")
+            out = error(404, "CONTRACT_NOT_FOUND", f"Unknown contract {contract_id}")
+        elif route_key == "POST /contracts/{contractId}/analysis":
             out = handle_trigger(contract_id, event.get("body"))
         elif route_key == "GET /contracts/{contractId}/analysis":
             include = ((event.get("queryStringParameters") or {}).get("include") or "").split(",")

@@ -1,0 +1,21 @@
+-- =============================================================================
+-- 005 — let the AI role read who the signers of a contract are
+--
+-- Additive, read-only, no data change. Idempotent (GRANT can be re-run).
+--
+-- Why
+-- ---
+-- Since 2026-10-01 GET /files shows a user only the contracts they uploaded or
+-- are a signer on. The analysis API applies the same rule, so a contract's
+-- risks, fields, summary and obligations are not readable by any signed-in
+-- user who knows its id. The signers live in app.contract_signers (003), which
+-- granted access to app_writer only, so judy_ai_writer cannot see them and
+-- every signer would be refused.
+--
+-- SELECT only. The AI still cannot change application records.
+--
+-- Note for the Terraform runner: it splits this file on semicolons, so the
+-- comments here deliberately contain none.
+-- =============================================================================
+
+GRANT SELECT ON app.contract_signers TO judy_ai_writer;

@@ -10,6 +10,9 @@ left pending and no model runs.
 Usage:
     python test_analysis_api.py [contract_id]
 
+Requests carry the contract uploader's claims; the access checks use a stranger
+and no claims at all. The signer check runs once 005 is applied.
+
 Environment: AWS_PROFILE=zq-appevo MSYS_NO_PATHCONV=1 PYTHONIOENCODING=utf-8
 """
 
@@ -33,8 +36,13 @@ DEFAULT_CONTRACT = "188e718e-00a9-4f32-a536-a1337bc31d5b"   # advisor-agreement.
 PDF_CONTRACT = os.environ.get("PDF_CONTRACT")                # a PDF contract, to check the empty-images case
 
 
-def event(method, path, route, params, body=None, query=None):
+STRANGER = {"sub": "00000000-0000-0000-0000-00000000beef", "email": "stranger@example.com"}
+CLAIMS = {}   # the uploader of the contract under test, filled in by main()
+
+
+def event(method, path, route, params, body=None, query=None, claims=None):
     """The subset of an API Gateway HTTP API v2 event the handler reads."""
+    claims = CLAIMS if claims is None else claims
     return {
         "version": "2.0",
         "routeKey": f"{method} {route}",
@@ -43,7 +51,7 @@ def event(method, path, route, params, body=None, query=None):
         "queryStringParameters": query,
         "body": body,
         "requestContext": {"http": {"method": method, "path": path},
-                           "authorizer": {"jwt": {"claims": {"email": "test@local"}}}},
+                           "authorizer": {"jwt": {"claims": claims}}},
     }
 
 
@@ -61,6 +69,11 @@ def main():
     cid = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_CONTRACT
     base = f"/contracts/{cid}/analysis"
     results = []
+
+    # Requests carry the uploader's claims: only the uploader or a signer may read a contract.
+    owner = handler.query("SELECT uploaded_by FROM app.contracts WHERE id = :id::uuid", [handler.p("id", cid)])
+    CLAIMS.update({"sub": owner[0]["uploaded_by"], "email": "uploader@local"})
+    print(f"as uploader sub={CLAIMS['sub'][:8]}…")
 
     # --- status ---
     body, ok = call("GET status", event("GET", base, "/contracts/{contractId}/analysis", {"contractId": cid}), 200)
@@ -149,6 +162,36 @@ def main():
     body, ok = call("GET status bad id -> 400",
                     event("GET", base, "/contracts/{contractId}/analysis", {"contractId": "abc"}), 400)
     results.append(ok)
+
+    # --- access: uploader or signer only; everyone else gets the unknown-contract 404 ---
+    for label, ev in (
+        ("stranger: GET status -> 404", event("GET", base, "/contracts/{contractId}/analysis",
+                                              {"contractId": cid}, claims=STRANGER)),
+        ("stranger: GET results risk-clause -> 404",
+         event("GET", f"{base}/risk-clause", "/contracts/{contractId}/analysis/{agentType}",
+               {"contractId": cid, "agentType": "risk-clause"}, claims=STRANGER)),
+        ("stranger: POST re-run -> 404", event("POST", base, "/contracts/{contractId}/analysis",
+                                               {"contractId": cid}, body=json.dumps({"agents": ["summary"]}),
+                                               claims=STRANGER)),
+        ("no claims at all -> 404", event("GET", base, "/contracts/{contractId}/analysis",
+                                         {"contractId": cid}, claims={})),
+    ):
+        body, ok = call(label, ev, 404)
+        results.append(ok and body["error"]["code"] == "CONTRACT_NOT_FOUND")
+    try:
+        signer = handler.query(
+            "SELECT s.contract_id::text AS cid, s.signer_email AS email FROM app.contract_signers s "
+            "JOIN app.contracts c ON c.id = s.contract_id WHERE c.uploaded_by <> s.signer_email LIMIT 1")
+    except handler.ClientError:
+        signer = None
+        print("SKIP signer check: judy_ai_writer cannot read app.contract_signers yet (apply 005)")
+    if signer:
+        s_cid, s_email = signer[0]["cid"], signer[0]["email"]
+        body, ok = call("signer (email in other case): GET status -> 200",
+                        event("GET", f"/contracts/{s_cid}/analysis", "/contracts/{contractId}/analysis",
+                              {"contractId": s_cid}, claims={"sub": STRANGER["sub"], "email": s_email.upper()}),
+                        200)
+        results.append(ok)
 
     # --- re-run (dry run: rows created then marked failed, agents not invoked) ---
     body, ok = call("POST re-run summary (dry run) -> 202",

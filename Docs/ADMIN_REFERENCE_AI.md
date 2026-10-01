@@ -5,7 +5,7 @@
 | Scope | The AI workstream of the SOW: document text extraction, the four AI agents, the AI data model and the AI API |
 | Audience | Administrators who deploy, configure and operate the Judy AI environment |
 | Environment | AWS account `580118073904`, region `us-west-2`, resource prefix `rag-app-prod` |
-| Version | 1.1, 1 October 2026. Every value below was read from the live environment on that date. 1.1: extraction batch handling and rules packaging fixed in code. |
+| Version | 1.2, 1 October 2026. Every value below was read from the live environment on that date. 1.1: extraction batch handling and rules packaging fixed in code. 1.2: per-user access on the AI API. |
 | Related | Infrastructure and application chapters of this reference; the API contract in [`AI_AGENTS_API.md`](AI_AGENTS_API.md) |
 
 This chapter is part of the single administrator reference document the SOW requires
@@ -98,7 +98,9 @@ All functions: Python 3.13, no VPC (database access is through the RDS Data API)
 ### 2.4 AI API routes
 
 All on the HTTP API `rag-app-prod-api` behind the Cognito JWT authorizer; a request without a
-valid sign-in gets `401` from the gateway. Full request and response shapes are in
+valid sign-in gets `401` from the gateway. A signed-in user sees a contract's analysis only if
+they uploaded it or are one of its signers — the same rule as the contract list. Anyone else
+gets `404`, as for an unknown contract. Full request and response shapes are in
 [`AI_AGENTS_API.md`](AI_AGENTS_API.md).
 
 | Route | Purpose |
@@ -159,7 +161,9 @@ package contains rules identical to `Backend/playbook/playbook_rules.json`.
 ### 4.3 Database changes
 
 The AI schema is created by `001_ai_schema.sql`; `002_risk_category_tracked_term.sql` adds the
-`tracked_term` risk category. Both are applied. New migrations go in `Backend/sql/`, are copied
+`tracked_term` risk category. Both are applied. `005_judy_ai_read_contract_signers.sql` lets
+the AI role read `app.contract_signers` (SELECT only) for the access rule; apply it before
+deploying the analysis API version that enforces that rule. New migrations go in `Backend/sql/`, are copied
 to `IaC/2_data/scripts/`, and are applied by the infrastructure workstream with the master
 credentials — the AI role cannot change the schema.
 
@@ -311,6 +315,7 @@ The test set is `Backend/tests/corpus/`: eight documents built from Judy's own t
 | Agent fails with `ValidationException … on-demand throughput isn't supported` | `MODEL_ID` is a bare model ID | Use the inference profile ID `us.amazon.nova-pro-v1:0` |
 | Risk agent fails loading rules, or flags against old rules | The agent's copy of `playbook_rules.json` is missing or out of date | `build_rules.py` writes both copies; `test_playbook_rules_in_sync.py` checks them; redeploy |
 | API returns `409 ANALYSIS_NOT_READY` with `status: failed` | That agent's last run failed | Error is in `judy_ai.agent_runs.error_message` and the agent's log group; re-run (6.2) |
+| A signer's review screen shows no AI results (`404` from the analysis API) | The AI role cannot read `app.contract_signers`; the log says `ACCESS CHECK cannot read app.contract_signers` | Apply `005_judy_ai_read_contract_signers.sql` |
 | Fields on the page are missing or misplaced | BDA project lost bounding boxes (public default project in use) | `BDA_PROJECT_ARN` must point to `judy-ai-contract-extraction` |
 | No page images for a PDF | Expected: BDA renders page images for Word documents only | The web application shows PDFs with its own viewer |
 | Page images stop loading after a while | Presigned URLs expire after 15 minutes | Reload status with `?include=pageImages` (the web application does this automatically) |
@@ -326,6 +331,7 @@ Every function logs the real exception. Read the log, not a model's description 
 | Control | Evidence (date verified) |
 |---|---|
 | Sign-in required on every AI route | Request without a token → `401` (1 Oct 2026) |
+| Users see only their own contracts' analysis | Uploader or signer only; others and requests without claims get `404` (`test_analysis_api.py`, 1 Oct 2026) |
 | Least privilege per function | One IAM role per function; database access through a dedicated secret; agents can read only the BDA output prefix of the bucket; only extraction and analysis-api may invoke agents (1 Oct 2026) |
 | AI cannot change application records | `judy_ai_writer` writing to `app.contracts` → `permission denied` (17 Sep 2026) |
 | Encryption at rest | Aurora storage and the database secrets encrypted with a customer-managed KMS key; S3 buckets SSE AES-256; SQS queues encrypted (1 Oct 2026) |

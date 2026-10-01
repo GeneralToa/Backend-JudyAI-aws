@@ -42,6 +42,7 @@ continuous polling — the app reads status when a page loads.
 | Case | **JSON is camelCase. The database is snake_case.** Mapping tables below are authoritative. |
 | Timestamps | ISO 8601, UTC, e.g. `2026-09-16T15:15:48Z` |
 | IDs | UUID strings |
+| Access | A caller sees a contract only if they uploaded it or are one of its signers — the same rule as `GET /files`. Anything else gets `404 CONTRACT_NOT_FOUND`, exactly as for an unknown id, so ids cannot be probed. |
 
 > The camelCase/snake_case split is deliberate but it is exactly the kind of mismatch that
 > silently broke `memory_size` in the Lambda config. Every field is mapped explicitly below —
@@ -100,7 +101,7 @@ Request body is optional. Omit it to run all three pre-signing agents.
 | Code | When |
 |---|---|
 | `202` | Accepted, runs created |
-| `404` | Unknown `contractId` |
+| `404` | Unknown `contractId`, or one the caller neither uploaded nor signs |
 | `409` | Analysis already running for this contract — returns the in-flight runs |
 | `422` | Document has no successful extraction and cannot be analyzed |
 
@@ -338,7 +339,7 @@ Not available until the contract is signed. Returns `409` before then.
 
 | Code | HTTP | Meaning |
 |---|---|---|
-| `CONTRACT_NOT_FOUND` | 404 | Unknown `contractId` |
+| `CONTRACT_NOT_FOUND` | 404 | Unknown `contractId`, or one the caller neither uploaded nor signs |
 | `ANALYSIS_NOT_READY` | 409 | Agent has not succeeded yet — `status` tells you where it is |
 | `ANALYSIS_IN_PROGRESS` | 409 | Re-run requested while one is already running |
 | `EXTRACTION_FAILED` | 422 | BDA could not read the document (or has not run yet — `extractionStatus` says which). Per the SOW parsing failures go to the DLQ for manual resolution |
