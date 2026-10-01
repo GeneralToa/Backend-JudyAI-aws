@@ -533,6 +533,47 @@ resource "aws_iam_policy" "analysis_api_policy" {
   })
 }
 
+# =============== ADMIN API POLICY =================
+resource "aws_iam_policy" "admin_api_policy" {
+  name = "${local.identifier}-admin-api-policy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "rds-data:ExecuteStatement"
+        ]
+        Resource = data.aws_ssm_parameter.aurora_postgres_arn.value
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+        ]
+        Resource = data.aws_ssm_parameter.kms_aurora_postgres_arn.value
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        Resource = [
+          "arn:aws:ssm:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:parameter/rag-app-prod/aurora/*",
+          "arn:aws:ssm:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:parameter/rag-app-prod/secret-manager/*"
+        ]
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role" "scheduler_execution" {
   name = "${local.identifier}-scheduler-execution-role"
 
@@ -654,46 +695,6 @@ resource "aws_iam_role_policy_attachment" "lambda_analysis_api_role_att" {
   }
   role       = aws_iam_role.lambda_role[each.key].name
   policy_arn = aws_iam_policy.analysis_api_policy.arn
-}
-
-resource "aws_iam_policy" "admin_api_policy" {
-  name = "${local.identifier}-admin-api-policy"
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "rds-data:ExecuteStatement"
-        ]
-        Resource = data.aws_ssm_parameter.aurora_postgres_arn.value
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
-        Resource = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "kms:Decrypt",
-          "kms:GenerateDataKey",
-        ]
-        Resource = data.aws_ssm_parameter.kms_aurora_postgres_arn.value
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:GetParameter",
-          "ssm:GetParameters"
-        ]
-        Resource = [
-          "arn:aws:ssm:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:parameter/rag-app-prod/aurora/*",
-          "arn:aws:ssm:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:parameter/rag-app-prod/secret-manager/*"
-        ]
-      }
-    ]
-  })
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_admin_api_role_att" {
