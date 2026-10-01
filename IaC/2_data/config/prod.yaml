@@ -68,7 +68,7 @@ sqs:
       create_queue_policy: true
       max_receive_count: 3
       visibility_timeout_seconds: 120
-      message_retention_seconds: 86400
+      message_retention_seconds: 1209600
       create_redrive_allow_policy: true
   documentExtractionQueue:
     name: "document-extraction"
@@ -80,7 +80,7 @@ sqs:
       create_queue_policy: true
       max_receive_count: 3
       visibility_timeout_seconds: 360
-      message_retention_seconds: 86400
+      message_retention_seconds: 1209600
       create_redrive_allow_policy: true
 
 sns:
@@ -97,12 +97,6 @@ sns:
       documentExtractionQueue:
         protocol: "sqs"
         name: "document-extraction"
-
-elasticache:
-  name: "redis-cluster"
-  node_type: "cache.t4g.micro"
-  snapshot_retention_limit: 7
-  apply_immediately: false
 
 bedrockKnowledgeBase:
   name: "knowledge-base"

@@ -1,75 +1,23 @@
-# Judy.ai Knowledge Base - Technical Documentation
+# Judy.ai Knowledge Base - Technical Documentation V2
 
 ## Table of Contents
 
 1. [Solution Architecture](#solution-architecture)
 2. [Component Descriptions](#component-descriptions)
 3. [Agentic RAG Pipeline](#agentic-rag-pipeline)
-4. [Data Flows](#data-flows)
-5. [Configuration](#configuration)
-6. [Architectural Decisions](#architectural-decisions)
-7. [Terraform & Source Code Structure](#terraform--source-code-structure)
-8. [DevOps: Deployment & Maintenance](#devops-deployment--maintenance)
-9. [Post-Deployment: Knowledge Base Setup with Default Data](#post-deployment-knowledge-base-setup-with-default-data)
+4. [Document Extraction Pipeline](#document-extraction-pipeline)
+5. [Data Flows](#data-flows)
+6. [Database Schema](#database-schema)
+7. [Configuration](#configuration)
+8. [Architectural Decisions](#architectural-decisions)
+9. [Terraform & Source Code Structure](#terraform--source-code-structure)
+10. [DevOps: Deployment & Maintenance](#devops-deployment--maintenance)
+11. [Post-Deployment: Knowledge Base Setup with Default Data](#post-deployment-knowledge-base-setup-with-default-data)
 
 ---
 
 ## Solution Architecture
-
-```
-                                    ┌──────────────────────────────┐
-                                    │         End Users             │
-                                    └──────────────┬───────────────┘
-                                                   │
-                                    ┌──────────────▼───────────────┐
-                                    │     CloudFront (CDN + OAC)    │
-                                    └──────────────┬───────────────┘
-                                                   │
-                              ┌─────────────────────┼─────────────────────┐
-                              │                     │                     │
-                   ┌──────────▼──────────┐  ┌──────▼──────┐   ┌─────────▼─────────┐
-                   │  S3 (Static Website) │  │   Cognito   │   │   API Gateway     │
-                   │  index.html, app.js  │  │  User Pool  │   │  (REST + Auth)    │
-                   └──────────────────────┘  └─────────────┘   └───────┬───────────┘
-                                                                       │
-                          ┌────────────────────────────────────────────┼────────────────┐
-                          │                                            │                │
-               ┌──────────▼──────────┐              ┌─────────────────▼──────┐   ┌─────▼──────────────┐
-               │  Lambda: data_upload │              │  Lambda: data_processor │   │  Lambda: retrieve  │
-               │  (presigned URLs +   │              │  (files API + ingestion)│   │  _and_generate     │
-               │   DynamoDB write)    │              └────────────┬───────────┘   │  (Strands Agents)  │
-               └──────────┬───────────┘                          │                └─────────┬──────────┘
-                          │                                      │                          │
-                          ▼                                      ▼                          ▼
-               ┌────────────────────┐              ┌─────────────────────┐     ┌───────────────────────┐
-               │  S3 Landing Zone   │──S3 Event──▶│       SQS Queue     │     │  Bedrock Knowledge    │
-               │  (document storage)│              └──────────┬──────────┘     │  Base (retrieve &     │
-               └────────────────────┘                         │                │  generate API)        │
-                                                              ▼                └───────────┬───────────┘
-                                                   ┌────────────────────┐                  │
-                                                   │  Bedrock KB Sync   │                  ▼
-                                                   │  (StartIngestion)  │     ┌───────────────────────┐
-                                                   └─────────┬──────────┘     │  Aurora Serverless v2  │
-                                                             │                │  (PostgreSQL+pgvector) │
-                                                             ▼                └───────────────────────┘
-                                                   ┌────────────────────┐
-                                                   │  EventBridge       │
-                                                   │  Scheduler         │
-                                                   │  (dynamic, 1 min)  │
-                                                   └─────────┬──────────┘
-                                                             ▼
-                                                   ┌────────────────────┐
-                                                   │  Lambda: ingestion │
-                                                   │  _post_processor   │
-                                                   └────────────────────┘
-                                                             │
-                                                             ▼
-                                                   ┌────────────────────┐
-                                                   │     DynamoDB       │
-                                                   │  (document metadata│
-                                                   │   + kb_status)     │
-                                                   └────────────────────┘
-```
+![Solution Architecture](SolutionArchitecture.png)
 
 ---
 
@@ -79,56 +27,92 @@
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| Static Website | HTML/CSS/JS | Judy.ai branded SPA with upload, chat, files pages |
-| Authentication | Cognito Hosted UI | OAuth2 implicit flow with custom dark theme CSS |
+| Static Website | HTML/CSS/JS | Judy.ai branded SPA with upload, chat, files, and review pages |
+| Authentication | Cognito Hosted UI (classic) | OAuth2 implicit flow; access/ID tokens valid 1 hour, refresh token 30 days; admin-created users only (no self-signup); MFA disabled |
 | Hosting | CloudFront + S3 | CDN delivery with Origin Access Control |
 
 ### API Layer
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| API Gateway | REST API (Regional) | Routes with Cognito JWT authorizer |
-| Routes | POST /upload, POST /chat, GET /files, DELETE /files/{id} | CRUD operations + RAG queries |
-| CORS | OPTIONS preflight | Allows cross-origin requests from CloudFront domain |
+| API Gateway | HTTP API (API GW v2) | Routes with Cognito JWT authorizer, CORS configured |
+| All routes | Cognito JWT required | All routes require authentication (`authRequired: true`) |
+
+**Full Route Table** (from `IaC/9_apigateway/config/prod.yaml`):
+
+| Method | Path | Lambda | Purpose |
+|--------|------|--------|---------|
+| POST | `/upload` | `data-upload` | Generate presigned S3 URL |
+| POST | `/chat` | `retrieve-and-generate` | Agentic RAG query |
+| GET | `/files` | `data-processor` | List uploaded documents |
+| GET | `/files/{documentId}/download` | `data-processor` | Get presigned download URL |
+| DELETE | `/files/{documentId}` | `data-processor` | Delete document |
+| POST | `/contracts/{contractId}/route` | `signature-workflow` | Route contract for signature |
+| GET | `/contracts/{contractId}/signers` | `signature-workflow` | List signers for a contract |
+| POST | `/contracts/{contractId}/sign` | `signature-workflow` | Record a signature event |
+| POST | `/contracts/{contractId}/cancel-routing` | `signature-workflow` | Cancel routing |
+| POST | `/contracts/{contractId}/analysis` | `analysis-api` | Trigger AI analysis |
+| GET | `/contracts/{contractId}/analysis` | `analysis-api` | Get all analysis results |
+| GET | `/contracts/{contractId}/analysis/{agentType}` | `analysis-api` | Get analysis by agent type |
+| GET | `/admin/templates` | `admin-api` | List approval templates |
+| PUT | `/admin/templates/{templateId}` | `admin-api` | Update approval template |
+| GET | `/admin/settings` | `admin-api` | Get system settings |
+| PUT | `/admin/settings` | `admin-api` | Save system settings |
 
 ### Compute (Lambda Functions)
 
 | Function | Runtime | Timeout | Memory | Purpose |
 |----------|---------|---------|--------|---------|
-| data_upload | Python 3.13 | 30s | 128MB | Generates presigned S3 URLs, writes initial DynamoDB metadata |
-| data_processor | Python 3.13 | 60s | 128MB | Handles SQS events (ingestion), API GW (list/delete files) |
-| retrieve_and_generate | Python 3.13 | 120s | 512MB | Agentic RAG pipeline (Strands Agents + Bedrock KB) |
-| ingestion_post_processor | Python 3.13 | 30s | 128MB | Monitors ingestion jobs, updates DynamoDB status |
+| data_upload | Python 3.13 | 30s | 128MB | Generates presigned S3 URLs, writes initial DynamoDB + Aurora metadata |
+| data_processor | Python 3.13 | 60s | 128MB | Handles SQS ingestion events; list/delete files API; creates EventBridge schedules |
+| retrieve_and_generate | Python 3.13 | 120s | 512MB | Agentic RAG pipeline (Strands Agents SDK + Bedrock KB) |
+| ingestion_post_processor | Python 3.13 | 30s | 128MB | Monitors ingestion jobs, updates DynamoDB status, handles orphan documents |
+| document_extraction | Python 3.13 | 300s | 256MB | Invokes BDA on uploaded PDFs; stores extraction results in Aurora; triggers agent pipeline |
+| agent_risk_clause | Python 3.13 | 300s | 512MB | AI agent — analyzes contract risk clauses, writes to `judy_ai.*` |
+| agent_template_prepopulation | Python 3.13 | 300s | 512MB | AI agent — detects contract template type, pre-populates fields from BDA output |
+| agent_summary | Python 3.13 | 300s | 512MB | AI agent — generates contract summaries, writes to `judy_ai.*` |
+| agent_obligation_tracking | Python 3.13 | 300s | 512MB | AI agent — extracts and tracks contractual obligations |
+| signature_workflow | Python 3.13 | 30s | 128MB | Manages document routing for signature, triggers obligation agent on completion; sends SES emails |
+| analysis_api | Python 3.13 | 29s | 256MB | API handler for contract analysis results; invokes agent functions |
+| admin_api | Python 3.13 | 29s | 256MB | Admin panel API — manages approval templates and system settings via `app.*` schema |
+
+**Lambda Layer** (retrieve_and_generate only):
+- Strands Agents SDK: `arn:aws:lambda:us-west-2:856699698935:layer:strands-agents-py3_13-x86_64:2`
 
 ### Data Storage
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| S3 Landing Zone | Standard bucket | Raw document storage (PDF/DOCX uploads) |
-| DynamoDB | PAY_PER_REQUEST | Document metadata (id, name, status, uploader, size) |
-| Aurora Serverless v2 | PostgreSQL 16.6 + pgvector | Vector store for Bedrock KB embeddings |
-| Secrets Manager | JSON secret | Bedrock KB database credentials |
-| SSM Parameter Store | Standard parameters | Knowledge Base ID and Data Source ID |
+| S3 Landing Zone | Standard bucket (regional) | Raw document storage (PDF/DOCX uploads) + BDA output (`bda-output/` prefix) |
+| DynamoDB | PAY_PER_REQUEST | Document metadata (id, name, kb_status, ingestion_job_id, uploader, size) |
+| Aurora Serverless v2 | PostgreSQL 17.5 + pgvector | Three schemas: `bedrock_integration` (vector store), `judy_ai` (AI analysis results), `app` (application data) |
+| Secrets Manager | JSON secrets | Aurora master credentials; `judy_ai_writer` credentials; `app_writer` credentials |
+| SSM Parameter Store | Standard parameters | KB ID, DS ID, Aurora cluster ARN, KMS key ARNs, Secrets Manager ARNs |
 
 ### AI/ML
 
 | Component | Model | Purpose |
 |-----------|-------|---------|
-| Bedrock Knowledge Base | - | Orchestrates ingestion (OCR, chunking, embedding) and retrieval |
+| Bedrock Knowledge Base | — | Orchestrates ingestion (OCR via BDA, chunking, embedding) and retrieval |
 | Embedding Model | Cohere Embed Multilingual v3 | Generates 1024-dim vectors for documents |
-| Foundation Model | Amazon Nova Pro v1 | RAG generation and response formatting |
-| Intent Detection | Amazon Nova Lite v1 | Content safety classification |
+| Foundation Model | `us.amazon.nova-pro-v1:0` (cross-region inference profile) | RAG generation and agent reasoning |
+| Intent Detection | Amazon Nova Lite v1 | Content safety classification in the RAG pipeline |
 | Retrieval Agent | Amazon Nova Lite v1 | KB search with rephrase retry logic |
-| BDA Parser | Bedrock Data Automation | Multi-modal document parsing (PDF/images) |
+| BDA Parser | Bedrock Data Automation | Multi-modal document parsing for `document_extraction` Lambda |
+
+> **Note**: The deployment uses cross-region inference profiles (`us.amazon.nova-pro-v1:0`, `us.data-automation-v1`) rather than direct model IDs. This enables automatic failover across AWS regions.
 
 ### Event-Driven Components
 
 | Component | Purpose |
 |-----------|---------|
-| SQS Standard Queue | Buffers S3 upload events for serial ingestion processing |
-| SQS Dead Letter Queue | Captures failed messages after 10 retries |
-| EventBridge Scheduler | Dynamic schedules (1-min rate) to monitor ingestion job status |
+| SQS: `ingestion` queue | Buffers S3 ObjectCreated events for the `data_processor` Lambda |
+| SQS: `document-extraction` queue | Buffers events for the `document_extraction` Lambda |
+| SQS Dead Letter Queues | Capture failed messages after max retries |
+| EventBridge Scheduler | Dynamic per-job schedules (1-min rate) to monitor Bedrock KB ingestion jobs |
 | CloudWatch Alarm | Alerts when DLQ has messages (processing failures) |
+| SES | Email delivery for signature workflow notifications |
+| SNS | Fan-out: S3 ObjectCreated event → SNS topic → 2 SQS queues (`ingestion` and `document-extraction`) |
 
 ---
 
@@ -170,10 +154,39 @@ User Query
 
 ### Key Design Choices
 
-- **Fail-open safety**: If intent detector output is ambiguous, query proceeds (only explicit "UNSAFE:" blocks)
+- **Fail-open safety**: If intent detector output is ambiguous, query proceeds (only explicit "UNSAFE:" prefix blocks)
 - **Citations-based detection**: Uses Bedrock `citations[]` field (not heuristic text matching) to determine if KB had relevant results
 - **Module-level initialization**: Graph is built once at Lambda cold start, reused across warm invocations
 - **Adaptive retry**: boto3 clients configured with `mode: adaptive` for automatic throttle handling
+
+---
+
+## Document Extraction Pipeline
+
+Uploaded documents are processed by BDA (Bedrock Data Automation) via a dedicated pipeline before AI agents run:
+
+```
+S3 ObjectCreated (uploads/)
+         │
+         ▼
+SQS: document-extraction queue
+         │
+         ▼
+Lambda: document_extraction
+  1. Invokes BDA via InvokeDataAutomationAsync
+  2. Polls GetDataAutomationStatus until COMPLETE
+  3. Stores BDA output (markdown text + metadata) in Aurora (judy_ai.document_extractions)
+  4. Invokes in parallel:
+       - agent_risk_clause
+       - agent_template_prepopulation
+       - agent_summary
+         │
+         ▼
+  Results stored in Aurora (judy_ai.contract_risks, judy_ai.template_detections,
+                             judy_ai.contract_summaries, judy_ai.contract_fields)
+```
+
+**BDA Output Storage**: Raw BDA artifacts (JSON with blocks, tables, geometry) are stored in S3 under the `bda-output/` prefix. The `document_extraction` Lambda writes the extracted markdown text to Aurora for agent consumption.
 
 ---
 
@@ -182,28 +195,36 @@ User Query
 ### Upload Flow
 
 ```
-1. User drops file → Frontend validates size (15MB max)
+1. User drops file → Frontend validates size
 2. POST /upload → data_upload Lambda
-3. Lambda generates presigned URL + writes DynamoDB record (kb_status="loading")
+3. Lambda generates presigned S3 URL (regional endpoint: https://s3.us-west-2.amazonaws.com)
+   + writes DynamoDB record (kb_status="loading")
+   + writes app.contracts record in Aurora
 4. Frontend PUTs file to S3 via presigned URL
-5. S3 ObjectCreated event → SQS → data_processor Lambda
-6. Lambda updates file_size_kb in DynamoDB
-7. Lambda calls StartIngestionJob (Bedrock KB sync)
-8. Lambda creates EventBridge Scheduler schedule (rate: 1 min)
-9. Scheduler triggers ingestion_post_processor
-10. Post-processor checks job status via GetIngestionJob
-11. On COMPLETE: updates kb_status to "ingested", deletes schedule
-12. On FAILED: updates kb_status to "failed", deletes schedule
+5. S3 ObjectCreated event → SNS topic → fan-out to 2 SQS queues:
+     a) SQS (ingestion) → data_processor Lambda:
+        - Updates file_size_kb in DynamoDB
+        - Calls StartIngestionJob (Bedrock KB sync)
+        - Creates EventBridge Scheduler schedule (rate: 1 min)
+        - Scheduler triggers ingestion_post_processor
+        - Post-processor checks job status via GetIngestionJob
+        - On COMPLETE: updates kb_status to "ingested", deletes schedule
+        - On FAILED: updates kb_status to "failed", deletes schedule
+     b) SQS (document-extraction) → document_extraction Lambda:
+        - Invokes BDA via InvokeDataAutomationAsync
+        - Polls GetDataAutomationStatus until COMPLETE
+        - Stores extracted text in Aurora (judy_ai.document_extractions)
+        - Invokes agent_risk_clause, agent_template_prepopulation, agent_summary in parallel
 ```
 
 ### Deletion Flow
 
 ```
-1. User right-clicks file → confirms deletion
+1. User confirms deletion
 2. DELETE /files/{id} → data_processor Lambda
 3. Lambda deletes file from S3
 4. Lambda sets kb_status="deleting" in DynamoDB (record kept)
-5. Lambda calls StartIngestionJob (re-sync)
+5. Lambda calls StartIngestionJob (re-sync to remove from KB)
 6. Lambda creates EventBridge Scheduler schedule
 7. Post-processor monitors job → on COMPLETE: deletes DynamoDB record + schedule
 ```
@@ -222,53 +243,131 @@ When StartIngestionJob throws ConflictException (job already running):
 
 ---
 
+## Database Schema
+
+Aurora PostgreSQL 17.5, database `ragdb`. Three schemas:
+
+### `bedrock_integration` — vector store (Bedrock-owned)
+
+| Table | Description |
+|-------|-------------|
+| `bedrock_integration.bedrock_kb` | pgvector embeddings table used by the Bedrock Knowledge Base. Fields: `id`, `embedding` (vector 1024), `chunks` (text), `metadata` (json) |
+
+Indexes: HNSW on `embedding`, GIN on `metadata`.
+
+### `app` — application-owned
+
+| Table | Description |
+|-------|-------------|
+| `app.contracts` | One row per uploaded contract. Core join target. Fields: id (UUID PK), s3_bucket, s3_key, original_filename, mime_type, file_size_bytes, template_type, uploaded_by, uploaded_at, status, signed_at |
+| `app.signature_events` | Signature lifecycle events (sent, confirmed, completed, declined) linked to contracts |
+| `app.approval_templates` | Up to 3 admin-configured templates. Fields: `id` (UUID PK), `name`, `routing_type` (sequential\|parallel), `signer_roles` (JSONB ordered list), `is_default` (unique partial index). Seeded with one default sequential template (`["supplier","company"]`) |
+| `app.contract_signers` | One row per signer assigned to a contract. Fields: `id`, `contract_id` (FK), `template_id` (FK), `signer_email`, `signer_role`, `signer_order`, `status` (pending\|signed\|declined), `assigned_at`, `signed_at` |
+| `app.signer_signatures` | Actual signature data per signer. Fields: `id`, `contract_id` (FK), `signer_id` (FK), `signature_data` (base64 PNG), `field_id` (optional FK to `judy_ai.contract_fields` for page placement), `page`, `created_at` |
+| `app.system_settings` | Key/value table for system-wide configuration (app_name, max_file_size_mb, notification flags, etc.) |
+
+### `judy_ai` — AI-owned
+
+| Table | Description |
+|-------|-------------|
+| `judy_ai.document_extractions` | BDA extraction results per contract (extracted_text, s3_output_uri, status) |
+| `judy_ai.agent_runs` | Audit log of all agent invocations (contract_id, agent_type, status, duration) |
+| `judy_ai.contract_risks` | Risk clause analysis results from `agent_risk_clause` |
+| `judy_ai.template_detections` | Template type detected by `agent_template_prepopulation` |
+| `judy_ai.contract_fields` | Extracted/pre-populated contract fields |
+| `judy_ai.contract_summaries` | Contract summaries from `agent_summary` |
+| `judy_ai.contract_obligations` | Obligation records from `agent_obligation_tracking` |
+
+View: `judy_ai.v_latest_agent_runs` — shows the most recent run per (contract_id, agent_type).
+
+### Database Roles
+
+| Role | DML Access | Read-only Access | Used by |
+|------|-----------|-----------------|---------|
+| `judy_ai_writer` | `judy_ai.*` | `app.*` | document_extraction, agent_*, retrieve_and_generate |
+| `app_writer` | `app.*` | `judy_ai.*` | admin_api, signature_workflow, data_upload, data_processor |
+
+Bedrock KB role (master credentials stored in Secrets Manager) has full access to `bedrock_integration.*`.
+
+### Migration Pattern
+
+All DDL is applied exclusively by Terraform (`IaC/2_data/sql.tf`) using `null_resource` + `local-exec` via the RDS Data API. There is **no manual SQL step** required at deploy time.
+
+Migration files in `IaC/2_data/scripts/`:
+
+| File | Content |
+|------|---------|
+| `000_setup_vector_db.sql` | pgvector extension, `bedrock_integration` schema and table, indexes |
+| `001_ai_schema.sql` | `app` and `judy_ai` schemas, all tables, indexes, `v_latest_agent_runs` view; role creation and grants are inline in `sql.tf` |
+| `002_risk_category_tracked_term.sql` | Risk category and tracked term tables |
+| `003_signature_workflow.sql` | Signature workflow tables and approval templates |
+| `004_app_system_settings.sql` | `app.system_settings` table |
+
+Triggers: `filemd5()` of each SQL file + `cluster_arn`. Migrations re-run automatically when either the SQL file or the Aurora cluster changes.
+
+---
+
 ## Configuration
 
-### Terraform Variables
+### Terraform Structure
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| aws_region | us-east-1 | AWS region for all resources |
-| project_name | rag-app | Prefix for resource naming |
-| environment | dev | Environment identifier |
-| aurora_master_username | dbadmin | Aurora admin username |
-| aurora_master_password | (required) | Aurora admin password |
-| aurora_database_name | ragdb | Database name |
-| aurora_bedrock_user_username | bedrock_user | Bedrock KB database role |
-| aurora_bedrock_user_password | (required) | Must match SQL setup script |
-| bedrock_foundation_model_id | amazon.nova-pro-v1:0 | Model for RAG generation |
-| bedrock_embedding_model_id | cohere.embed-multilingual-v3 | Model for vectorization |
+The IaC is split into numbered, independently-deployable Terraform modules under `IaC/`. Each module has its own `config/prod.yaml` (and optionally `config/dev.yaml`).
+
+There is no `terraform.tfvars` file. All configuration lives in YAML files loaded via `locals.tf`.
+
+### Deployment Region
+
+All resources deploy to **`us-west-2`**.
+
+> **Change from original doc**: The original documentation listed `us-east-1` as the default region. The current deployment uses `us-west-2`.
+
+### Key Config Values (`IaC/8_lambda/config/prod.yaml`)
+
+| Setting | Value |
+|---------|-------|
+| Region | `us-west-2` |
+| Resource prefix | `rag-app` |
+| Bedrock inference profile | `us.amazon.nova-pro-v1:0` |
+| BDA profile | `us.data-automation-v1` |
+| S3 bucket namespace | `account-regional` (pattern: `{prefix}-{name}-{account}-{region}-an`) |
+
+### Aurora Configuration
+
+| Setting | Value |
+|---------|-------|
+| Engine | Aurora PostgreSQL 17.5 |
+| Instance Class | db.serverless |
+| Min ACU | 0.5 |
+| Max ACU | 5 |
+| Autoscaling | Enabled (min 1 instance, max 5) |
+| Master username | `ragapp_root` |
+| Backup retention | 1 day |
+| RDS Proxy | Enabled |
+| CloudWatch logs | `postgresql` |
+| Storage Encrypted | true (KMS) |
+| HTTP Endpoint (Data API) | enabled |
+| VPC | Yes (Lambda functions connect via RDS Data API HTTP endpoint, not VPC) |
 
 ### Resource Tagging
 
 All resources are tagged with:
 ```
 aws-apn-id = "pc:an2wwsvdun8wdc006lw2pr8ag"
+Env        = <terraform workspace>
+Terraform  = "true"
 ```
 
-Applied globally via `provider.aws.default_tags`.
-
-### Aurora Configuration
-
-| Setting | Value |
-|---------|-------|
-| Engine | aurora-postgresql 16.6 |
-| Instance Class | db.serverless |
-| Min ACU | 1 |
-| Max ACU | 1 |
-| Storage Encrypted | true |
-| HTTP Endpoint (Data API) | enabled |
-| Publicly Accessible | true (dev only) |
+Applied globally via `provider.aws.default_tags`. The `awscc` provider uses `list({key, value})` tag format.
 
 ---
 
 ## Architectural Decisions
 
-### 1. S3 → SQS → Lambda (not S3 → Lambda direct)
+### 1. S3 → SNS → SQS → Lambda (fan-out pattern)
 
-**Decision**: Route S3 events through SQS before Lambda.
+**Decision**: Route S3 ObjectCreated events through an SNS topic, which fans out to two independent SQS queues before Lambda.
 
-**Rationale**: S3 direct Lambda triggers don't support fan-out or retry with DLQ. SQS provides message durability, retry (10 attempts), and dead-letter queue for failed processing.
+**Rationale**: S3 can only have one notification target per event type. SNS fan-out decouples the two downstream consumers (KB ingestion and BDA document extraction) so they can scale, retry, and fail independently. Each SQS queue has its own DLQ and retry policy. This also avoids a direct S3→Lambda trigger, which lacks DLQ support.
 
 ### 2. Dynamic EventBridge Scheduler (not static scheduled rule)
 
@@ -284,27 +383,45 @@ Applied globally via `provider.aws.default_tags`.
 
 ### 4. Strands Agents graph pattern (not monolithic prompt)
 
-**Decision**: Three-agent pipeline with separate models per task.
+**Decision**: Three-agent pipeline for RAG with separate models per task.
 
-**Rationale**: Separation of concerns (safety, retrieval, formatting), different model sizes for different tasks (Lite for classification, Pro for generation), and fail-isolation (one agent failing doesn't crash the whole pipeline).
+**Rationale**: Separation of concerns (safety, retrieval, formatting), different model sizes for different tasks (Lite for classification, Pro for generation), and fail-isolation.
 
-### 5. Bedrock Data Automation (BDA) parsing strategy
+### 5. Bedrock Data Automation (BDA) for document parsing
 
-**Decision**: Use BDA for document parsing instead of the default parser.
+**Decision**: Use BDA (`BEDROCK_DATA_AUTOMATION` parsing strategy) instead of the default Bedrock KB parser. A dedicated `document_extraction` Lambda also uses BDA for per-contract structured extraction.
 
-**Rationale**: BDA provides superior OCR, table extraction, and multi-modal understanding for PDFs with images, charts, and complex layouts.
+**Rationale**: BDA provides superior OCR, table extraction, and multi-modal understanding for PDFs with images, charts, and complex layouts. BDA artifacts (blocks, geometry) are stored in S3 `bda-output/` for downstream agent consumption.
 
-### 6. Cognito Implicit flow (not Authorization Code)
+### 6. RDS Data API (no VPC for Lambda)
 
-**Decision**: Use OAuth2 implicit flow for the static site.
+**Decision**: All Lambda functions connect to Aurora via the RDS Data API (HTTP endpoint), not a direct VPC connection.
 
-**Rationale**: Simplest implementation for a pure client-side SPA with no backend token exchange. The token is stored in sessionStorage (cleared on tab close/logout). Acceptable for the current security requirements.
+**Rationale**: Avoids VPC complexity for Lambda functions. The RDS Data API is authenticated via Secrets Manager, removing the need for password management in Lambda code. Lambda functions with `vpcConfig: false` can still reach Aurora.
 
-### 7. Job-document association (ingestion_job_id)
+### 7. File-based SQL migrations in Terraform (not postgresql provider)
 
-**Decision**: Tag each DynamoDB document with the specific ingestion_job_id that processes it.
+**Decision**: DB schema changes are applied via `null_resource` + `local-exec` using the AWS CLI `rds-data execute-statement`, reading from versioned `.sql` files.
 
-**Rationale**: Without this, a global scan for "loading" documents could incorrectly mark files processed by different concurrent jobs. The association ensures per-job precision.
+**Rationale**: The `postgresql` Terraform provider requires a direct TCP connection to the DB (needs VPC or bastion). The RDS Data API approach works entirely over HTTPS from the Terraform runner, matches the existing connectivity model, and the `filemd5()` trigger ensures idempotent re-runs.
+
+### 8. Two-schema ownership model (app vs judy_ai)
+
+**Decision**: Application data lives in `app.*` (owned by the app team), AI analysis results in `judy_ai.*` (owned by the AI team). Cross-schema access is read-only for each role.
+
+**Rationale**: Enforces team boundaries at the database level. The AI workstream cannot overwrite application state; the application cannot corrupt AI analysis data.
+
+### 9. S3 Regional Endpoint for Presigned URLs
+
+**Decision**: The `data_processor` Lambda uses `endpoint_url="https://s3.us-west-2.amazonaws.com"` when creating the boto3 S3 client.
+
+**Rationale**: Without a regional endpoint, boto3 generates presigned URLs pointing to the global S3 endpoint, which redirects to the regional endpoint. Browsers block cross-origin redirects for PDFs rendered in iframes. The regional endpoint ensures the presigned URL resolves without a redirect.
+
+### 10. Cognito Implicit Flow
+
+**Decision**: Use OAuth2 implicit flow for the static site. Authorization Code flow is configured but commented out in `IaC/5_cognito/config/prod.yaml`.
+
+**Rationale**: Simplest implementation for a pure client-side SPA with no backend token exchange. The hosted UI (classic) redirects to `/callback.html` after login. Access and ID tokens are valid for 1 hour; refresh token for 30 days.
 
 ---
 
@@ -314,93 +431,93 @@ Applied globally via `provider.aws.default_tags`.
 
 ```
 .
-├── docs/
+├── Docs/
+│   ├── TECHNICAL_DOCUMENTATION.md    # Original (superseded by this file)
+│   ├── TECHNICAL_DOCUMENTATION_V2.md # This file
 │   ├── USER_MANUAL.md
-│   └── TECHNICAL_DOCUMENTATION.md
-├── terraform/
-│   ├── main.tf                    # Root module - wires all sub-modules
-│   ├── variables.tf               # Input variable declarations
-│   ├── outputs.tf                 # Terraform outputs (URLs, IDs)
-│   ├── providers.tf               # AWS provider + default tags
-│   ├── terraform.tfvars           # Actual deployment values (gitignored)
-│   ├── terraform.tfvars.example   # Template for new deployments
-│   └── modules/
-│       ├── s3/                    # Website bucket + Landing Zone bucket
-│       │   ├── main.tf            # Buckets, CORS, website file uploads, EventBridge notification
-│       │   ├── variables.tf
-│       │   └── outputs.tf
-│       ├── cloudfront/            # Distribution + OAC + S3 bucket policy
-│       │   ├── main.tf
-│       │   ├── variables.tf
-│       │   └── outputs.tf
-│       ├── cognito/               # User Pool + Client + UI customization
-│       │   ├── main.tf
-│       │   ├── cognito-custom.css # Dark theme for hosted login UI
-│       │   ├── variables.tf
-│       │   └── outputs.tf
-│       ├── api_gateway/           # REST API + 4 routes + Cognito authorizer
-│       │   ├── main.tf
-│       │   ├── variables.tf
-│       │   └── outputs.tf
-│       ├── lambda/                # 4 Lambda functions + IAM + EventBridge Scheduler role
-│       │   ├── main.tf
-│       │   ├── variables.tf
-│       │   └── outputs.tf
-│       ├── aurora/                # Serverless v2 cluster + Secrets Manager
-│       │   ├── main.tf
-│       │   ├── variables.tf
-│       │   └── outputs.tf
-│       ├── bedrock_kb/            # Knowledge Base + S3 data source + BDA IAM
-│       │   ├── main.tf
-│       │   ├── variables.tf
-│       │   └── outputs.tf
-│       ├── dynamodb/              # Documents metadata table
-│       │   ├── main.tf
-│       │   ├── variables.tf
-│       │   └── outputs.tf
-│       ├── sqs/                   # Ingestion queue + DLQ + S3 notification + alarm
-│       │   ├── main.tf
-│       │   ├── variables.tf
-│       │   └── outputs.tf
-│       └── ssm/                   # KB ID + DS ID parameters
-│           ├── main.tf
-│           ├── variables.tf
-│           └── outputs.tf
-├── lambdas/
-│   ├── data_upload/
-│   │   └── handler.py            # Presigned URL + DynamoDB metadata write
-│   ├── data_processor/
-│   │   └── handler.py            # SQS handler + Files API + ingestion orchestration
-│   ├── retrieve_and_generate/
-│   │   └── handler.py            # Strands Agents graph (3-node agentic RAG)
-│   └── ingestion_post_processor/
-│       └── handler.py            # Job status polling + orphan follow-up
-├── website/
-│   ├── index.html                # Main SPA page (sidebar + 3 sections)
-│   ├── callback.html             # Cognito OAuth callback (token capture)
-│   ├── styles.css                # Full dark theme CSS (Judy.ai design system)
-│   ├── app.js                    # Application logic (upload, chat, files, sessions)
-│   ├── auth.js                   # Cognito auth (login redirect, logout, token management)
-│   ├── logo-color.svg            # Judy.ai color logo (inline SVG in HTML)
-│   └── config.js                 # Auto-generated by Terraform (API URLs, Cognito config)
-└── sql/
-    └── setup_vector_db.sql       # Aurora pgvector schema setup script
+│   ├── AI_AGENTS_API.md
+│   └── ADMIN_REFERENCE_AI.md
+│
+├── IaC/                               # Infrastructure as Code (numbered Terraform modules)
+│   ├── 1_network/                     # VPC, subnets, security groups, VPC endpoints
+│   ├── 2_data/                        # Aurora, S3, DynamoDB, SQS, SNS,
+│   │   │                              # KMS, Secrets Manager, SSM, Bedrock KB + BDA
+│   │   ├── scripts/                   # Versioned SQL migration files
+│   │   │   ├── 000_setup_vector_db.sql
+│   │   │   ├── 001_ai_schema.sql
+│   │   │   ├── 002_risk_category_tracked_term.sql
+│   │   │   ├── 003_signature_workflow.sql
+│   │   │   └── 004_app_system_settings.sql
+│   │   ├── sql.tf                     # null_resource migrations (runs SQL via RDS Data API)
+│   │   ├── bedrock.tf                 # Knowledge Base, Data Source, BDA project
+│   │   ├── main.tf                    # Aurora module calls
+│   │   ├── s3.tf                      # S3 buckets
+│   │   ├── sqs.tf                     # SQS queues
+│   │   ├── secrets_manager.tf         # Secrets Manager secrets
+│   │   ├── ssm_parameter.tf           # SSM parameters
+│   │   ├── kms.tf                     # KMS keys
+│   │   ├── sns.tf                     # SNS topics
+│   │   └── config/prod.yaml
+│   ├── 3_ses/                         # SES domain, templates, Route53 records
+│   ├── 4_cloudfront/                  # CloudFront distribution, OAC, Route53
+│   ├── 5_cognito/                     # User Pool, App Client, KMS, Secrets Manager
+│   ├── 6_lambda/                      # All Lambda functions, IAM, SQS mappings
+│   │   ├── main.tf                    # aws_lambda_function (for_each over prod.yaml)
+│   │   ├── iam.tf                     # IAM roles and policies per function
+│   │   ├── data.tf                    # Data sources (SQS, S3, SSM, DynamoDB)
+│   │   ├── cloudwatch.tf              # Log groups
+│   │   └── config/prod.yaml           # Lambda configuration (all 12 functions)
+│   ├── 7_apigateway/                  # API Gateway REST API, routes, Cognito authorizer
+│   └── 8_monitoring/                  # CloudWatch alarms, dashboards
+│
+├── Backend/
+│   ├── lambdas/
+│   │   ├── data_upload/handler.py
+│   │   ├── data_processor/handler.py
+│   │   ├── retrieve_and_generate/handler.py
+│   │   ├── ingestion_post_processor/handler.py
+│   │   ├── document_extraction/handler.py
+│   │   ├── agent_risk_clause/handler.py
+│   │   ├── agent_template_prepopulation/handler.py
+│   │   ├── agent_summary/handler.py
+│   │   ├── agent_obligation_tracking/handler.py
+│   │   ├── signature_workflow/handler.py
+│   │   ├── analysis_api/handler.py
+│   │   └── admin_api/handler.py
+│   ├── sql/                           # Source SQL files (also copied to IaC/2_data/scripts/)
+│   │   ├── 001_ai_schema.sql
+│   │   ├── 002_risk_category_tracked_term.sql
+│   │   └── 003_signature_workflow.sql
+│   ├── playbook/                      # Playbook rules for AI agents
+│   │   ├── playbook_rules.json
+│   │   └── build_rules.py
+│   └── tests/                         # Evaluation and integration tests
+│
+└── website/
+    ├── index.html                     # Main SPA (sidebar + sections)
+    ├── callback.html                  # Cognito OAuth callback
+    ├── review.html                    # Document review page
+    ├── styles.css                     # Dark theme CSS (main)
+    ├── review.css                     # Review page styles
+    ├── app.js                         # Main application logic
+    ├── auth.js                        # Cognito auth
+    ├── review.js                      # Review page logic
+    ├── logo-color.svg
+    └── config.js                      # Auto-generated by Terraform (API URLs, Cognito config)
 ```
 
 ### Key Terraform Resources by Module
 
-| Module | Resources Created |
-|--------|-------------------|
-| s3 | 2 buckets, CORS, public access block, website file objects, EventBridge notification |
-| cloudfront | Distribution, OAC, S3 bucket policy |
-| cognito | User Pool, Domain, App Client, UI Customization |
-| api_gateway | REST API, Authorizer, 4 resources, 4 methods, 4 CORS OPTIONS, deployment, stage, 3 Lambda permissions |
-| lambda | 4 IAM roles, 4 IAM policies, 4 archive files, 4 Lambda functions, 1 SQS event source mapping, 1 Lambda layer reference, 1 Scheduler execution role |
-| aurora | RDS cluster, instance, Secrets Manager secret + version |
-| bedrock_kb | IAM role + policy, Knowledge Base, S3 data source (BDA parsing) |
-| dynamodb | Single table (PAY_PER_REQUEST, document_id PK) |
-| sqs | Standard queue, DLQ, queue policy, S3 notification, CloudWatch alarm |
-| ssm | 2 parameters (KB ID, DS ID) |
+| Module | Key Resources |
+|--------|---------------|
+| 1_network | VPC, public/private subnets, security groups, VPC endpoints |
+| 2_data | Aurora cluster + instance, 5 DB migration null_resources, S3 buckets, DynamoDB, 2 SQS queues, KMS keys, SNS, Secrets Manager (master + judy_ai_writer + app_writer), SSM parameters, Bedrock KB, BDA project |
+| 3_ses | SES domain identity, email templates, Route53 DNS records |
+| 4_cloudfront | CloudFront distribution, OAC, S3 bucket policy, Route53 alias |
+| 5_cognito | User Pool, App Client, KMS, Secrets Manager |
+| 6_lambda | 12 IAM roles, 12 IAM policies, 12 Lambda functions, 2 SQS event source mappings, 1 EventBridge Scheduler execution role |
+| 7_apigateway | REST API, Cognito authorizer, all routes, Lambda permissions |
+| 8_monitoring | CloudWatch alarms, dashboards |
 
 ---
 
@@ -409,56 +526,49 @@ Applied globally via `provider.aws.default_tags`.
 ### Prerequisites
 
 - Terraform >= 1.5.0
-- AWS CLI v2 configured with credentials
-- Access to Amazon Bedrock models (enable in the Bedrock console):
+- AWS CLI v2 configured with credentials (and access to the `TerraformRole`: `arn:aws:iam::580118073904:role/TerraformRole`)
+- Access to Amazon Bedrock models (enable in the Bedrock console, `us-west-2`):
   - Cohere Embed Multilingual v3
-  - Amazon Nova Pro v1
+  - Amazon Nova Pro v1 (cross-region inference profile `us.amazon.nova-pro-v1:0`)
   - Amazon Nova Lite v1
-- PostgreSQL client (`psql`) for database setup
 
-### Step 1: Configure Variables
+> **No PostgreSQL client (`psql`) required.** All DB schema setup is automated by Terraform via the RDS Data API.
 
-```bash
-cd terraform
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values (passwords, region, etc.)
+### Module Apply Order
+
+The modules have data dependencies; apply in numerical order:
+
+```
+1_network → 2_data → 3_ses → 4_cloudfront → 5_cognito → 6_lambda → 7_apigateway → 8_monitoring
 ```
 
-### Step 2: Deploy Infrastructure
+### Deploying a Module
+
+Each module is independently state-managed:
 
 ```bash
+cd IaC/2_data
 terraform init
-terraform plan    # Review changes
-terraform apply   # Deploy (type 'yes' to confirm)
+terraform workspace select prod   # or new prod
+terraform plan
+terraform apply
 ```
 
-Expected output includes:
-- `cloudfront_distribution_url` - Application URL
-- `cognito_user_pool_id` - For user management
-- `knowledge_base_id` - KB identifier
-- `aurora_cluster_endpoint` - Database endpoint
+The `sql.tf` null_resources run DB migrations automatically as part of `terraform apply` on `2_data`. Re-runs are triggered if either the SQL file content (`filemd5`) or the Aurora cluster ARN changes.
 
-### Step 3: Setup Aurora Database
-
-Connect to Aurora and run the SQL setup script:
+### Deploying Lambda Code Changes
 
 ```bash
-# Get the cluster endpoint
-ENDPOINT=$(terraform output -raw aurora_cluster_endpoint)
-
-# Connect using psql
-psql -h $ENDPOINT -U <aurora_master_username> -d ragdb
-
-# Run the setup script (replace placeholders first!)
-\i ../sql/setup_vector_db.sql
+cd IaC/8_lambda
+terraform apply
+# Changes to Backend/lambdas/<function>/handler.py are picked up via
+# data.archive_file which hashes the source directory.
 ```
 
-**Critical**: Replace `BEDROCK_USERNAME` and `BEDROCK_PASSWORD` in the SQL script with the exact values from your `terraform.tfvars` (`aurora_bedrock_user_username` and `aurora_bedrock_user_password`).
-
-### Step 4: Create Initial User
+### Creating the Initial Cognito User
 
 ```bash
-USER_POOL_ID=$(terraform output -raw cognito_user_pool_id)
+USER_POOL_ID="<from IaC/6_cognito outputs or SSM>"
 
 aws cognito-idp admin-create-user \
   --user-pool-id $USER_POOL_ID \
@@ -467,39 +577,33 @@ aws cognito-idp admin-create-user \
   --temporary-password TempPassword123!
 ```
 
-### Step 5: Invalidate CloudFront Cache (after updates)
+### Invalidating CloudFront Cache (after website updates)
 
 ```bash
-DIST_ID=$(terraform output -raw cloudfront_distribution_id)
+DIST_ID="<from IaC/5_cloudfront outputs>"
 aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/*"
-```
-
-### Updating the Application
-
-```bash
-cd terraform
-terraform apply  # Detects file changes via etag/hash, re-uploads
-# Then invalidate CloudFront cache for immediate effect
 ```
 
 ### Destroying the Environment
 
 ```bash
-cd terraform
-terraform destroy  # Type 'yes' to confirm
+# Destroy in reverse order
+cd IaC/11_monitoring && terraform destroy
+cd IaC/10_waf && terraform destroy
+# ... etc.
+cd IaC/2_data && terraform destroy   # Deletes Aurora cluster and all data
 ```
 
-**Warning**: This deletes ALL resources including the Aurora database and S3 data. Ensure you have backups of any important data.
+> **Warning**: Destroying `2_data` deletes the Aurora cluster and all S3 data. Ensure backups exist before proceeding.
 
 ---
 
 ## Post-Deployment: Knowledge Base Setup with Default Data
 
-After infrastructure deployment, the Knowledge Base is empty. This section describes how to load default/seed data so users have content available immediately.
+After infrastructure deployment, the Knowledge Base is empty. This section describes how to load default/seed data.
 
 ### Overview
 
-The process:
 1. Prepare default documents (PDF/DOCX)
 2. Upload them to the S3 Landing Zone
 3. Trigger a Knowledge Base synchronization job
@@ -507,59 +611,47 @@ The process:
 
 ### Step 1: Prepare Default Documents
 
-Gather the PDF/DOCX files that should be pre-loaded. Place them in a local directory:
-
 ```bash
 mkdir -p default-data/
-# Copy your default documents here
 cp /path/to/document1.pdf default-data/
-cp /path/to/document2.pdf default-data/
 ```
 
 ### Step 2: Upload to S3 Landing Zone
 
-Upload documents to the landing zone bucket using the same path pattern the application uses (`uploads/{uuid}/{filename}`):
-
 ```bash
-# Get the bucket name
-BUCKET=$(terraform output -raw landing_zone_bucket)
+# Bucket name pattern: rag-app-landing-zone-{account_id}-us-west-2-an
+BUCKET="rag-app-landing-zone-<account_id>-us-west-2-an"
 
-# Upload each file with a unique UUID prefix
 for file in default-data/*; do
   UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
   FILENAME=$(basename "$file")
-  aws s3 cp "$file" "s3://${BUCKET}/uploads/${UUID}/${FILENAME}"
+  aws s3 cp "$file" "s3://${BUCKET}/uploads/${UUID}/${FILENAME}" --region us-west-2
   echo "Uploaded: uploads/${UUID}/${FILENAME}"
 done
 ```
 
-**Note**: Uploading via S3 directly (not the app UI) means DynamoDB records won't be created for these files. They will exist in the KB but not appear in the "Files" page. If you want them visible in the UI, upload via the application's upload page instead.
+> **Note**: Uploading via S3 directly bypasses DynamoDB/Aurora record creation. Files will exist in the KB but not appear in the "Files" page. Upload via the application UI if you want proper metadata.
 
 ### Step 3: Trigger Knowledge Base Synchronization
 
 ```bash
-# Get KB and DS IDs
-KB_ID=$(terraform output -raw knowledge_base_id)
-DS_ID=$(terraform output -raw data_source_id)
+KB_ID="<from SSM /rag-app-prod/... or terraform output>"
+DS_ID="<from SSM /rag-app-prod/... or terraform output>"
 
-# Start ingestion job
 aws bedrock-agent start-ingestion-job \
   --knowledge-base-id $KB_ID \
   --data-source-id $DS_ID \
-  --region us-east-1
+  --region us-west-2
 ```
-
-Note the `ingestionJobId` from the response.
 
 ### Step 4: Monitor Synchronization Progress
 
 ```bash
-# Check job status (repeat until status is "COMPLETE")
 aws bedrock-agent get-ingestion-job \
   --knowledge-base-id $KB_ID \
   --data-source-id $DS_ID \
   --ingestion-job-id <JOB_ID> \
-  --region us-east-1
+  --region us-west-2
 ```
 
 Expected output when complete:
@@ -576,60 +668,28 @@ Expected output when complete:
 }
 ```
 
-**If `numberOfDocumentsFailed` > 0**: Check the `failureReasons` field for details. Common issues:
-- File too large (max 50MB for Bedrock KB)
-- Unsupported format
-- IAM permission issues
-
 ### Step 5: Validate with Retrieve & Generate API
 
-Test that the default data is queryable:
-
 ```bash
-# Test a query against the knowledge base
 aws bedrock-agent-runtime retrieve-and-generate \
   --input '{"text": "What are the main topics covered in the documents?"}' \
   --retrieve-and-generate-configuration '{
     "type": "KNOWLEDGE_BASE",
     "knowledgeBaseConfiguration": {
       "knowledgeBaseId": "'$KB_ID'",
-      "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0"
+      "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-pro-v1:0"
     }
   }' \
-  --region us-east-1
+  --region us-west-2
 ```
 
-Verify:
-- The response contains relevant information from your uploaded documents
-- Citations reference the uploaded S3 keys
-- No errors in the response
-
-### Step 6: Validate via the Application UI
-
-1. Open the application URL in a browser
-2. Log in with the admin user
-3. Navigate to **Chat**
-4. Ask a question about the default documents
-5. Verify you receive a relevant, sourced answer
-
-### Alternative: Upload Default Data via the Application UI
-
-If you want the files to appear in the Files page with proper metadata:
-
-1. Log into the application
-2. Navigate to **Upload**
-3. Upload each default document through the drag-and-drop interface
-4. Navigate to **Files** and wait for status to change to "Ingested"
-5. Test via Chat
-
-This approach is simpler but requires manual effort per file.
-
-### Troubleshooting Default Data Setup
+### Troubleshooting
 
 | Issue | Cause | Resolution |
 |-------|-------|------------|
-| Ingestion job fails | IAM permissions | Check Bedrock KB role has S3 GetObject and ListBucket on the landing zone bucket |
-| Job completes but 0 docs indexed | Files not in correct prefix | Ensure files are under `uploads/` prefix (or any prefix configured on the data source) |
+| Ingestion job fails | IAM permissions | Check Bedrock KB role has S3 GetObject/ListBucket on the landing zone bucket |
+| Job completes but 0 docs indexed | Files not under correct prefix | Ensure files are under the `uploads/` prefix |
 | Query returns no results | Vector dimension mismatch | Verify Aurora table uses `vector(1024)` matching Cohere Embed v3 |
-| Query returns no results | DB credentials mismatch | Verify Secrets Manager credentials match the PostgreSQL role created in SQL setup |
-| "STARTING" stuck for minutes | Normal for BDA parsing | BDA takes longer than default parser; wait up to 5 minutes |
+| Query returns no results | DB credentials mismatch | Verify Secrets Manager credentials match the PostgreSQL role |
+| "STARTING" status for minutes | Normal for BDA parsing | BDA takes longer than default parser; wait up to 5 minutes |
+| PDF preview broken in browser | Presigned URL redirect | Data processor uses regional S3 endpoint — verify `endpoint_url` in `data_processor/handler.py` |
