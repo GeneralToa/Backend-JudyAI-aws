@@ -91,8 +91,8 @@ All functions: Python 3.13, no VPC (database access is through the RDS Data API)
 | Function source (this is what gets deployed) | `Backend/lambdas/<function>/handler.py` |
 | Playbook converter and rules | `Backend/playbook/build_rules.py` → `Backend/playbook/playbook_rules.json` (the source `.docx` is Judy's document and is kept outside the repository) |
 | Database migrations | `Backend/sql/001_ai_schema.sql`, `002_risk_category_tracked_term.sql` (applied copies in `IaC/2_data/scripts/`) |
-| Terraform for the functions | `IaC/8_lambda/` — `config/prod.yaml` (memory, timeout, triggers), `main.tf` (environment variables), `iam.tf` (roles) |
-| Build output | `IaC/8_lambda/functions/<function>/function.zip`, produced by Terraform's `archive_file` from `Backend/lambdas/<function>/` |
+| Terraform for the functions | `IaC/6_lambda/` — `config/prod.yaml` (memory, timeout, triggers), `main.tf` (environment variables), `iam.tf` (roles) |
+| Build output | `IaC/6_lambda/functions/<function>/function.zip` (not committed), produced by Terraform's `archive_file` from `Backend/lambdas/<function>/` |
 | Validation tools | `Backend/tests/` (section 6.7) |
 
 ### 2.4 AI API routes
@@ -113,7 +113,7 @@ gets `404`, as for an unknown contract. Full request and response shapes are in
 
 ## 3. Configuration
 
-Environment variables are set by Terraform (`IaC/8_lambda/main.tf`). Variables marked
+Environment variables are set by Terraform (`IaC/6_lambda/main.tf`). Variables marked
 *default* are not set in Terraform; the code uses the value shown. Change them on the function
 or, better, add them to `main.tf` so the change survives the next deploy.
 
@@ -141,8 +141,8 @@ or, better, add them to `main.tf` so the change survives the next deploy.
 ### 4.1 How code reaches AWS
 
 Terraform's `archive_file` zips each folder `Backend/lambdas/<function>/` and deploys it with
-the settings in `IaC/8_lambda/config/prod.yaml`. There is no CI/CD pipeline; deployment is a
-`terraform apply` in `IaC/8_lambda/` by the infrastructure administrator.
+the settings in `IaC/6_lambda/config/prod.yaml`. There is no CI/CD pipeline; deployment is a
+`terraform apply` in `IaC/6_lambda/` by the infrastructure administrator.
 
 ### 4.2 Before every deploy: run the offline checks
 

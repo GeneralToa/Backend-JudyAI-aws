@@ -20,7 +20,7 @@ Backing data model: [`Backend/sql/001_ai_schema.sql`](../Backend/sql/001_ai_sche
 ## 1. Why this is asynchronous
 
 Every route on the existing HTTP API is capped at **29 seconds**
-(`timeoutMilliseconds: 29000` in `IaC/9_apigateway/config/prod.yaml`, and API Gateway's hard
+(`timeoutMilliseconds: 29000` in `IaC/7_apigateway/config/prod.yaml`, and API Gateway's hard
 ceiling is 30s).
 
 A single contract goes through BDA extraction plus up to three Bedrock agent calls. That will
@@ -410,7 +410,7 @@ Its standard-output configuration, for reproduction:
 
 ---
 
-## 8. Routes to add — drop-in for `IaC/9_apigateway/config/prod.yaml`
+## 8. Routes to add — drop-in for `IaC/7_apigateway/config/prod.yaml`
 
 Andres — these follow the existing `lambdaFunctions` pattern exactly.
 
@@ -441,7 +441,7 @@ Andres — these follow the existing `lambdaFunctions` pattern exactly.
 `analysis-api` will also need `rds-data:ExecuteStatement`, `secretsmanager:GetSecretValue` for
 the Aurora secret, and `lambda:InvokeFunction` on the four agent workers. Following the existing
 SSM pattern (`/rag-app/kms/dynamodb-arn`), I'd suggest publishing the Aurora cluster ARN and
-secret ARN as SSM parameters from `2_data` so `8_lambda` can consume them.
+secret ARN as SSM parameters from `2_data` so `6_lambda` can consume them.
 
 ---
 
