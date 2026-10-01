@@ -63,7 +63,10 @@ resource "aws_iam_policy" "data_processor_policy" {
       },
       {
         Effect = "Allow"
-        Action = ["ssm:GetParameters"]
+        Action = [
+          "ssm:GetParameters",
+          "ssm:GetParameter"
+        ]
         Resource = [
           data.aws_ssm_parameter.knowledge_base_id.arn,
           data.aws_ssm_parameter.data_source_id.arn,
