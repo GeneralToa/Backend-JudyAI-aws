@@ -1,0 +1,71 @@
+region: "us-west-2"
+identifier: "rag-app"
+tags:
+  Workspace: "IaC/monitoring"
+
+role_arn: "arn:aws:iam::580118073904:role/TerraformRole"
+
+sns:
+  emailNotificationsEnabled: false
+  alarmEmail: "eean@judy.ai"
+
+lambda:
+  dataUpload:
+    functionName: "data-upload"
+    p95TimeoutThreshold: 28500
+  dataProcessor:
+    functionName: "data-processor"
+    p95TimeoutThreshold: 57000
+  retrieveAndGenerate:
+    functionName: "retrieve-and-generate"
+    p95TimeoutThreshold: 114000
+  ingestionPostProcessor:
+    functionName: "ingestion-post-processor"
+    p95TimeoutThreshold: 28500
+  agentRiskClause:
+    functionName: "agent-risk-clause"
+    p95TimeoutThreshold: 285000
+  agentTemplatePrepopulation:
+    functionName: "agent-template-prepopulation"
+    p95TimeoutThreshold: 285000
+  agentSummary:
+    functionName: "agent-summary"
+    p95TimeoutThreshold: 285000
+  agentObligationTracking:
+    functionName: "agent-obligation-tracking"
+    p95TimeoutThreshold: 285000
+  documentExtraction:
+    functionName: "document-extraction"
+    p95TimeoutThreshold: 285000
+  signatureWorkflow:
+    functionName: "signature-workflow"
+    p95TimeoutThreshold: 28500
+  analysisApi:
+    functionName: "analysis-api"
+    p95TimeoutThreshold: 27550
+  adminApi:
+    functionName: "admin-api"
+    p95TimeoutThreshold: 27550
+
+apiGateway:
+  lambdaGateway:
+    name: "api"
+
+snsTopics:
+  uploadAssetsTopic:
+    name: "upload-assets"
+
+sqs:
+  ingestionQueue:
+    name: "ingestion-sqs"
+    dlq: "ingestion-sqs-dlq"
+  documentExtractionQueue:
+    name: "document-extraction-sqs"
+    dlq: "document-extraction-sqs-dlq"
+
+rdsAurora:
+  bedrock:
+    db_prefix: "aurora-postgres"
+
+dynamoDB:
+  - table_name: "documents"

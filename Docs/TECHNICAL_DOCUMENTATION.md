@@ -38,7 +38,7 @@
 | API Gateway | HTTP API (API GW v2) | Routes with Cognito JWT authorizer, CORS configured |
 | All routes | Cognito JWT required | All routes require authentication (`authRequired: true`) |
 
-**Full Route Table** (from `IaC/9_apigateway/config/prod.yaml`):
+**Full Route Table** (from `IaC/7_apigateway/config/prod.yaml`):
 
 | Method | Path | Lambda | Purpose |
 |--------|------|--------|---------|
@@ -321,7 +321,7 @@ All resources deploy to **`us-west-2`**.
 
 > **Change from original doc**: The original documentation listed `us-east-1` as the default region. The current deployment uses `us-west-2`.
 
-### Key Config Values (`IaC/8_lambda/config/prod.yaml`)
+### Key Config Values (`IaC/6_lambda/config/prod.yaml`)
 
 | Setting | Value |
 |---------|-------|
@@ -559,7 +559,7 @@ The `sql.tf` null_resources run DB migrations automatically as part of `terrafor
 ### Deploying Lambda Code Changes
 
 ```bash
-cd IaC/8_lambda
+cd IaC/6_lambda
 terraform apply
 # Changes to Backend/lambdas/<function>/handler.py are picked up via
 # data.archive_file which hashes the source directory.
@@ -568,7 +568,7 @@ terraform apply
 ### Creating the Initial Cognito User
 
 ```bash
-USER_POOL_ID="<from IaC/6_cognito outputs or SSM>"
+USER_POOL_ID="<from IaC/5_cognito outputs or SSM>"
 
 aws cognito-idp admin-create-user \
   --user-pool-id $USER_POOL_ID \
@@ -580,7 +580,7 @@ aws cognito-idp admin-create-user \
 ### Invalidating CloudFront Cache (after website updates)
 
 ```bash
-DIST_ID="<from IaC/5_cloudfront outputs>"
+DIST_ID="<from IaC/4_cloudfront outputs>"
 aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/*"
 ```
 
@@ -588,8 +588,8 @@ aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/*"
 
 ```bash
 # Destroy in reverse order
-cd IaC/11_monitoring && terraform destroy
-cd IaC/10_waf && terraform destroy
+cd IaC/8_monitoring && terraform destroy
+cd IaC/7_apigateway && terraform destroy
 # ... etc.
 cd IaC/2_data && terraform destroy   # Deletes Aurora cluster and all data
 ```
