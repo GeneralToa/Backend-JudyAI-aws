@@ -8,6 +8,17 @@ Trigger:
     SQS event (from the S3 upload notification on the landing zone bucket),
     matching the pattern already used by data_processor.
 
+Batches:
+    The queue hands this function up to 10 uploads at once. Each message is
+    processed independently and in parallel - BDA jobs are asynchronous, so ten
+    documents take about as long as one and stay well inside the timeout. If
+    any message fails, the ones that succeeded are deleted from the queue before
+    the invocation fails, so only the failed uploads are retried and, after
+    three attempts, reach the dead letter queue. Without that, one bad file
+    would send every document in its batch round again (repeat BDA jobs and
+    repeat agent runs) and take them all to the DLQ with it. This works whether
+    or not the event source mapping reports partial batch failures.
+
 Flow:
     1. Resolve the uploaded S3 object to a row in app.contracts
     2. Insert a judy_ai.document_extractions row (status 'running') immediately,
@@ -41,16 +52,19 @@ Why we wait inline instead of polling on a schedule:
 import json
 import os
 import time
+import traceback
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import unquote_plus
 
 import boto3
 from botocore.exceptions import ClientError
 
-# --- Clients ---
+# --- Clients (boto3 clients are thread-safe) ---
 bda_runtime_client = boto3.client("bedrock-data-automation-runtime")
 s3_client = boto3.client("s3")
 rds_data_client = boto3.client("rds-data")
 lambda_client = boto3.client("lambda")
+sqs_client = boto3.client("sqs")
 
 # --- Environment Variables ---
 AURORA_CLUSTER_ARN = os.environ["AURORA_CLUSTER_ARN"]
@@ -71,6 +85,9 @@ PRE_SIGNING_AGENT_ARNS = [
 
 MAX_WAIT_SECONDS = int(os.environ.get("MAX_WAIT_SECONDS", "240"))
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "5"))
+
+# Documents of one batch processed at the same time. The SQS batch size is 10.
+MAX_PARALLEL_DOCUMENTS = int(os.environ.get("MAX_PARALLEL_DOCUMENTS", "10"))
 
 
 # =============================================================
@@ -420,9 +437,9 @@ def process_document(bucket, key):
     trigger_pre_signing_agents(contract_id, extraction_id)
 
 
-def s3_objects_in(event):
+def objects_in_record(record):
     """
-    Yield (bucket, key) for every S3 object notification in an event.
+    Return [(bucket, key)] for the S3 object notification(s) in one event record.
 
     The upload prefix already feeds the ingestion queue, so this function is
     fed by fan-out: S3 -> SNS -> its own SQS queue (Andres, 2026-09-22). That
@@ -435,55 +452,123 @@ def s3_objects_in(event):
     An unrecognised body is logged and skipped, never silently ignored: a
     silent skip here would look exactly like "the upload never happened".
     """
-    for record in event.get("Records", []):
-        source = record.get("eventSource") or record.get("EventSource") or ""
+    source = record.get("eventSource") or record.get("EventSource") or ""
 
-        if source == "aws:s3" and "s3" in record:
-            payloads = [{"Records": [record]}]
-        elif source == "aws:sns":
-            payloads = [json.loads(record["Sns"]["Message"])]
-        else:
-            body = record.get("body")
+    if source == "aws:s3" and "s3" in record:
+        payloads = [{"Records": [record]}]
+    elif source == "aws:sns":
+        payloads = [json.loads(record["Sns"]["Message"])]
+    else:
+        body = record.get("body")
+        try:
+            payload = json.loads(body) if isinstance(body, str) else (body or {})
+        except json.JSONDecodeError:
+            print(f"Skipping record with non-JSON body: {str(body)[:200]}")
+            return []
+        if payload.get("Type") == "Notification" and "Message" in payload:
             try:
-                payload = json.loads(body) if isinstance(body, str) else (body or {})
-            except json.JSONDecodeError:
-                print(f"Skipping record with non-JSON body: {str(body)[:200]}")
-                continue
-            if payload.get("Type") == "Notification" and "Message" in payload:
-                try:
-                    payload = json.loads(payload["Message"])
-                except (json.JSONDecodeError, TypeError):
-                    print(f"Skipping SNS envelope with non-JSON Message: {str(payload.get('Message'))[:200]}")
-                    continue
-            payloads = [payload]
+                payload = json.loads(payload["Message"])
+            except (json.JSONDecodeError, TypeError):
+                print(f"Skipping SNS envelope with non-JSON Message: {str(payload.get('Message'))[:200]}")
+                return []
+        payloads = [payload]
 
-        for payload in payloads:
-            s3_records = payload.get("Records") if isinstance(payload, dict) else None
-            if not s3_records:
-                # S3 also sends a one-off {"Event": "s3:TestEvent"} when a
-                # notification is first configured. Log and move on.
-                print(f"Record carries no S3 object notification - skipping: {json.dumps(payload)[:200]}")
+    objects = []
+    for payload in payloads:
+        s3_records = payload.get("Records") if isinstance(payload, dict) else None
+        if not s3_records:
+            # S3 also sends a one-off {"Event": "s3:TestEvent"} when a
+            # notification is first configured. Log and move on.
+            print(f"Record carries no S3 object notification - skipping: {json.dumps(payload)[:200]}")
+            continue
+        for s3_record in s3_records:
+            s3_info = s3_record.get("s3") or {}
+            bucket = (s3_info.get("bucket") or {}).get("name")
+            raw_key = (s3_info.get("object") or {}).get("key")
+            if not bucket or not raw_key:
+                print(f"S3 record missing bucket or key - skipping: {json.dumps(s3_record)[:200]}")
                 continue
-            for s3_record in s3_records:
-                s3_info = s3_record.get("s3") or {}
-                bucket = (s3_info.get("bucket") or {}).get("name")
-                raw_key = (s3_info.get("object") or {}).get("key")
-                if not bucket or not raw_key:
-                    print(f"S3 record missing bucket or key - skipping: {json.dumps(s3_record)[:200]}")
-                    continue
-                # S3 event keys are URL-encoded; file names in this project
-                # contain spaces (for example "Mutual NDA_Template.docx").
-                yield bucket, unquote_plus(raw_key)
+            # S3 event keys are URL-encoded; file names in this project
+            # contain spaces (for example "Mutual NDA_Template.docx").
+            objects.append((bucket, unquote_plus(raw_key)))
+    return objects
+
+
+def s3_objects_in(event):
+    """Yield (bucket, key) for every S3 object notification in an event."""
+    for record in event.get("Records", []):
+        yield from objects_in_record(record)
+
+
+def queue_url_from_arn(queue_arn):
+    """arn:aws:sqs:<region>:<account>:<name> -> the queue URL (no GetQueueUrl permission needed)."""
+    _, _, _, region, account, name = queue_arn.split(":", 5)
+    return f"https://sqs.{region}.amazonaws.com/{account}/{name}"
+
+
+def is_sqs_message(record):
+    return record.get("eventSource") == "aws:sqs" and "receiptHandle" in record
+
+
+def run_record(record):
+    """
+    Process every document in one event record. Never raises: returns the
+    number of documents processed and the error, if any, so one failure cannot
+    stop the rest of the batch.
+    """
+    try:
+        count = 0
+        for bucket, key in objects_in_record(record):
+            process_document(bucket, key)
+            count += 1
+        return count, None
+    except Exception as e:  # noqa: BLE001 - reported per record, re-raised by the handler
+        traceback.print_exc()
+        return 0, e
+
+
+def delete_from_queue(record):
+    """Remove a successfully processed message so a failed batch does not retry it."""
+    try:
+        sqs_client.delete_message(
+            QueueUrl=queue_url_from_arn(record["eventSourceARN"]),
+            ReceiptHandle=record["receiptHandle"],
+        )
+        return True
+    except ClientError as e:
+        # Not fatal: the message comes back and the document is processed again.
+        print(f"Could not delete processed message {record.get('messageId')}: {e}")
+        return False
 
 
 def lambda_handler(event, context):
     """Entry point. Handles S3 upload notifications, via SQS/SNS fan-out or direct."""
     print(f"Event received: {json.dumps(event)[:500]}")
 
-    processed = 0
-    for bucket, key in s3_objects_in(event):
-        process_document(bucket, key)
-        processed += 1
+    records = event.get("Records", [])
+    if not records:
+        print("No records in event")
+        return {"statusCode": 200, "body": "processed 0 document(s)"}
+
+    # In parallel: each document spends most of its time waiting on BDA.
+    with ThreadPoolExecutor(max_workers=max(1, min(len(records), MAX_PARALLEL_DOCUMENTS))) as pool:
+        results = list(pool.map(run_record, records))
+
+    processed = sum(count for count, _ in results)
+    failed = [(record, error) for record, (_, error) in zip(records, results) if error is not None]
+
+    if failed:
+        # Delete the successes first, so raising retries only the failures.
+        removed = sum(
+            1 for record, (_, error) in zip(records, results)
+            if error is None and is_sqs_message(record) and delete_from_queue(record)
+        )
+        ids = ", ".join(str(r.get("messageId") or "?") for r, _ in failed)
+        raise RuntimeError(
+            f"{len(failed)} of {len(records)} record(s) failed ({ids}); "
+            f"{processed} document(s) processed, {removed} message(s) removed from the queue. "
+            f"First error: {failed[0][1]}"
+        )
 
     if processed == 0:
         print("No S3 object notifications in event")
