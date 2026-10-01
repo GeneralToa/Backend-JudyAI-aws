@@ -5,7 +5,7 @@
 | Scope | The AI workstream of the SOW: document text extraction, the four AI agents, the AI data model and the AI API |
 | Audience | Administrators who deploy, configure and operate the Judy AI environment |
 | Environment | AWS account `580118073904`, region `us-west-2`, resource prefix `rag-app-prod` |
-| Version | 1.0, 1 October 2026. Every value below was read from the live environment on that date. |
+| Version | 1.1, 1 October 2026. Every value below was read from the live environment on that date. 1.1: extraction batch handling and rules packaging fixed in code. |
 | Related | Infrastructure and application chapters of this reference; the API contract in [`AI_AGENTS_API.md`](AI_AGENTS_API.md) |
 
 This chapter is part of the single administrator reference document the SOW requires
@@ -63,7 +63,7 @@ All functions: Python 3.13, no VPC (database access is through the RDS Data API)
 
 | Function | Trigger | Memory | Timeout | Role |
 |---|---|---|---|---|
-| `rag-app-prod-document-extraction` | SQS `rag-app-prod-document-extraction-sqs`, batch size 10 | 256 MB | 300 s | `rag-app-prod-documentExtraction-role` |
+| `rag-app-prod-document-extraction` | SQS `rag-app-prod-document-extraction-sqs`, batch size 10, documents processed in parallel | 256 MB | 300 s | `rag-app-prod-documentExtraction-role` |
 | `rag-app-prod-agent-risk-clause` | Async invoke by extraction or analysis-api | 512 MB | 300 s | `rag-app-prod-agentRiskClause-role` |
 | `rag-app-prod-agent-template-prepopulation` | Async invoke by extraction or analysis-api | 512 MB | 300 s | `rag-app-prod-agentTemplatePrepopulation-role` |
 | `rag-app-prod-agent-summary` | Async invoke by extraction or analysis-api | 512 MB | 300 s | `rag-app-prod-agentSummary-role` |
@@ -125,6 +125,7 @@ or, better, add them to `main.tf` so the change survives the next deploy.
 | `BDA_OUTPUT_BUCKET`, `BDA_OUTPUT_PREFIX` | extraction (both), template agent (bucket) | landing-zone bucket; `bda-output` | Where BDA writes `result.json` and page images |
 | `PRE_SIGNING_AGENT_ARNS` | document-extraction | the three pre-signing agents, comma-separated | Which agents run after extraction |
 | `MAX_WAIT_SECONDS`, `POLL_INTERVAL_SECONDS` | document-extraction | *default* 240, 5 | How long extraction waits for BDA. A job still running after this is left as `running`. |
+| `MAX_PARALLEL_DOCUMENTS` | document-extraction | *default* 10 | Uploads of one queue batch processed at the same time |
 | `EXTRACTION_WAIT_SECONDS` | obligation agent | *default* 120 | If a contract is signed within a minute of upload, the agent waits this long for its extraction. |
 | `RISK_AGENT_ARN`, `TEMPLATE_AGENT_ARN`, `SUMMARY_AGENT_ARN`, `OBLIGATION_AGENT_ARN` | analysis-api | the four agent ARNs | Targets for re-runs |
 | `IN_FLIGHT_WINDOW_SECONDS` | analysis-api | *default* 600 | A run still pending or running after this long is treated as dead, so it cannot block re-runs. |
@@ -141,18 +142,19 @@ Terraform's `archive_file` zips each folder `Backend/lambdas/<function>/` and de
 the settings in `IaC/8_lambda/config/prod.yaml`. There is no CI/CD pipeline; deployment is a
 `terraform apply` in `IaC/8_lambda/` by the infrastructure administrator.
 
-### 4.2 Before every deploy: put the playbook rules next to the risk agent
+### 4.2 Before every deploy: run the offline checks
 
-The risk agent loads `playbook_rules.json` from its own package. That copy is excluded from
-git (`.gitignore`: `Backend/lambdas/*/playbook_rules.json`), so a fresh clone does not have it.
-**Deploying without it ships a risk agent that cannot load its rules.**
+The risk agent loads `playbook_rules.json` from its own package, so a copy sits beside its
+handler (`Backend/lambdas/agent_risk_clause/playbook_rules.json`). `build_rules.py` writes that
+copy and the source together, and both are committed. Before deploying, run:
 
 ```bash
-cp Backend/playbook/playbook_rules.json Backend/lambdas/agent_risk_clause/
+python Backend/tests/test_playbook_rules_in_sync.py   # the agent ships the current rules
+python Backend/tests/test_extraction_batch.py         # extraction batch handling
 ```
 
-Verified 1 October 2026: the deployed package contains a copy identical to
-`Backend/playbook/playbook_rules.json`. Section 9 recommends removing this manual step.
+Both run offline in seconds and need no AWS credentials. Verified 1 October 2026: the deployed
+package contains rules identical to `Backend/playbook/playbook_rules.json`.
 
 ### 4.3 Database changes
 
@@ -246,7 +248,8 @@ aws s3 cp s3://<bucket>/uploads/<key> s3://<bucket>/uploads/<key> \
 
 ### 6.3 A document in the dead-letter queue
 
-A message reaches the DLQ after three failed extraction attempts. Read the message (it holds
+A message reaches the DLQ after three failed extraction attempts of that upload; other uploads
+in the same batch are processed and removed from the queue regardless. Read the message (it holds
 the S3 key of the upload), find the error in `/aws/lambda/rag-app-prod-document-extraction`,
 fix the cause, then redrive the message from the SQS console ("Start DLQ redrive") or re-trigger
 the upload as in 6.2. Common causes are in section 7.
@@ -256,10 +259,10 @@ the upload as in 6.2. Common causes are in section 7.
 The playbook is Judy's legal content; its wording is copied verbatim and never edited by code.
 
 1. `python Backend/playbook/build_rules.py path/to/new_playbook.docx` regenerates
-   `Backend/playbook/playbook_rules.json` and reports possible typos for Judy to confirm rather
-   than silently correcting them.
+   `Backend/playbook/playbook_rules.json` and the agent's copy beside its handler, and reports
+   possible typos for Judy to confirm rather than silently correcting them.
 2. Check the rule count and spot-check clause text against the document.
-3. Copy the file next to the risk agent (section 4.2), deploy, and run
+3. Run `test_playbook_rules_in_sync.py`, deploy, and run
    `python Backend/tests/evaluate_risk_agent.py`: every playbook rule should still be found on
    the test set.
 
@@ -285,6 +288,8 @@ Run from `Backend/tests/` with AWS credentials for the account:
 
 | Script | Measures |
 |---|---|
+| `test_playbook_rules_in_sync.py` | Offline: the risk agent's copy of the rules matches the source |
+| `test_extraction_batch.py` | Offline: batch handling — parallel processing, a failing upload retried alone |
 | `evaluate_risk_agent.py` | Playbook rules found per test document, dated and numeric terms, invented missing-clause findings |
 | `evaluate_template_agent.py` | Document type and field placement on the stored BDA fixtures; draws the boxes on page images |
 | `evaluate_summary_agent.py` | Key points traced to a sentence, numbers not in the contract, length |
@@ -304,7 +309,7 @@ The test set is `Backend/tests/corpus/`: eight documents built from Judy's own t
 | Upload "succeeds" but the file never lands in S3 | The presigned upload URL is signed for `Content-Type: application/octet-stream`; any other type gets `403` | Client must send exactly that content type |
 | Extraction `AccessDenied` on `data-automation-profile/us.data-automation-v1` in another region | Cross-region BDA profile | Allow the profile ARN with a wildcard region in the extraction role |
 | Agent fails with `ValidationException … on-demand throughput isn't supported` | `MODEL_ID` is a bare model ID | Use the inference profile ID `us.amazon.nova-pro-v1:0` |
-| Risk agent fails loading rules | `playbook_rules.json` missing from the package | Section 4.2, redeploy |
+| Risk agent fails loading rules, or flags against old rules | The agent's copy of `playbook_rules.json` is missing or out of date | `build_rules.py` writes both copies; `test_playbook_rules_in_sync.py` checks them; redeploy |
 | API returns `409 ANALYSIS_NOT_READY` with `status: failed` | That agent's last run failed | Error is in `judy_ai.agent_runs.error_message` and the agent's log group; re-run (6.2) |
 | Fields on the page are missing or misplaced | BDA project lost bounding boxes (public default project in use) | `BDA_PROJECT_ARN` must point to `judy-ai-contract-extraction` |
 | No page images for a PDF | Expected: BDA renders page images for Word documents only | The web application shows PDFs with its own viewer |
@@ -359,9 +364,9 @@ account.
 
 | Item | Today | Recommendation | Owner |
 |---|---|---|---|
-| Extraction batching | The queue hands up to 10 uploads to one invocation, processed one after another (~27 s each) within a 300 s timeout. A burst of about ten uploads can time out, and one failing document makes the whole batch retry, re-analysing the others. | Batch size 1 for the extraction queue, or partial-batch responses (`ReportBatchItemFailures`) with the matching handler change | Infrastructure + AI |
+| Extraction batching | **Fixed in code 1 Oct 2026, live after the next deploy.** Up to 10 uploads per invocation are now processed in parallel (a batch takes about as long as one document), and a failing upload is retried alone: the others are removed from the queue first. Verified offline and against the live services. | Optional: enable `ReportBatchItemFailures` on the event source mapping; the handler is correct with or without it | Infrastructure (deploy) |
 | Dead-letter retention | 1 day | 14 days, so a failure over a weekend is still there to resolve, as the SOW intends | Infrastructure |
-| Playbook rules packaging | Manual copy before deploy (4.2) | Commit the copy, or have `build_rules.py` write both paths | AI |
+| Playbook rules packaging | **Fixed 1 Oct 2026:** the agent's copy is committed, written by `build_rules.py` with the source, and checked by `test_playbook_rules_in_sync.py` | — | AI (done) |
 | Bedrock permission scope | Agent roles may invoke any Bedrock model | Restrict `bedrock:InvokeModel` to the Nova Pro inference profile and its foundation models | Infrastructure |
 | Alarms | None | Alarms on Lambda errors for the six AI functions and on DLQ depth > 0 | Infrastructure |
 | Model quotas | Not load-tested | Bedrock request and token quotas for Nova Pro are the real ceiling under load; check them in Service Quotas before a large batch | Infrastructure |

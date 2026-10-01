@@ -26,7 +26,10 @@ SECTION_METADATA below.
 Usage:
     python build_rules.py [path/to/Playbook_part2_full.docx]
 
-Writes playbook_rules.json next to this script.
+Writes playbook_rules.json next to this script, and an identical copy next to the
+risk & clause agent's handler - Terraform packages each function's own folder, so
+the agent ships only what sits beside it. Both files are committed;
+Backend/tests/test_playbook_rules_in_sync.py fails if they ever differ.
 """
 
 import json
@@ -44,6 +47,10 @@ DEFAULT_SOURCE = os.path.join(
     "..", "..", "..", "local_context", "playbook", "Playbook_part2_full.docx",
 )
 OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "playbook_rules.json")
+AGENT_COPY_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "lambdas", "agent_risk_clause", "playbook_rules.json",
+)
 
 # Stable ids and contract-type applicability. The document only states contract
 # types in one row ("SOW, PA" under Access to Personal information), so the rest
@@ -405,11 +412,13 @@ def main():
 
     document, warnings = build(source)
 
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as fh:
-        json.dump(document, fh, indent=2, ensure_ascii=False)
+    for path in (OUTPUT_PATH, AGENT_COPY_PATH):
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(document, fh, indent=2, ensure_ascii=False)
 
     print(f"source : {source}")
     print(f"output : {OUTPUT_PATH}")
+    print(f"copy   : {os.path.normpath(AGENT_COPY_PATH)}")
     print(f"rules  : {document['rule_count']}")
 
     triggers = sum(len(r["triggers"]) for r in document["rules"])

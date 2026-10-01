@@ -71,9 +71,8 @@ AURORA_DATABASE = os.environ["AURORA_DATABASE"]
 MODEL_ID = os.environ.get("MODEL_ID", "us.amazon.nova-pro-v1:0")
 PROMPT_VERSION = os.environ.get("PROMPT_VERSION", "risk-clause-v1")
 
-# The IaC currently zips a single handler file, so the rules cannot be bundled
-# yet. Local file first (works once packaging moves to source_dir), S3 fallback
-# in the meantime.
+# The rules ship inside this function's package (Terraform zips this folder);
+# build_rules.py writes this copy. The S3 fallback is kept for manual overrides.
 RULES_FILENAME = "playbook_rules.json"
 RULES_BUCKET = os.environ.get("RULES_BUCKET")
 RULES_KEY = os.environ.get("RULES_KEY", "playbook/playbook_rules.json")

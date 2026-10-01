@@ -6,4 +6,3 @@ terraform.tfstate.backup
 */*/*/requirements.txt
 __pycache__/
 *.pyc
-Backend/lambdas/*/playbook_rules.json
