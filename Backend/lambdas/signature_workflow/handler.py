@@ -85,15 +85,20 @@ def get_uploader_email(contract_id):
     Returns None if not found.
     """
     try:
-        result = dynamodb_client.scan(
-            TableName=DOCUMENTS_TABLE,
-            FilterExpression="contract_id = :cid",
-            ExpressionAttributeValues={":cid": {"S": contract_id}},
-            ProjectionExpression="uploaded_by",
-        )
-        items = result.get("Items", [])
-        if items:
-            return items[0].get("uploaded_by", {}).get("S")
+        scan_kwargs = {
+            "TableName": DOCUMENTS_TABLE,
+            "FilterExpression": "contract_id = :cid",
+            "ExpressionAttributeValues": {":cid": {"S": contract_id}},
+            "ProjectionExpression": "uploaded_by",
+        }
+        while True:
+            result = dynamodb_client.scan(**scan_kwargs)
+            items = result.get("Items", [])
+            if items:
+                return items[0].get("uploaded_by", {}).get("S")
+            if "LastEvaluatedKey" not in result:
+                break
+            scan_kwargs["ExclusiveStartKey"] = result["LastEvaluatedKey"]
     except Exception as e:
         print(f"Warning: failed to look up uploader email for contract {contract_id}: {e}")
     return None
