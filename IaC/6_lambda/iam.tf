@@ -495,8 +495,16 @@ resource "aws_iam_policy" "signature_workflow_policy" {
           "kms:GenerateDataKey",
         ]
         Resource = [
-          data.aws_ssm_parameter.kms_aurora_postgres_arn.value
+          data.aws_ssm_parameter.kms_aurora_postgres_arn.value,
+          data.aws_ssm_parameter.kms_dynamodb_arn.value
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:Scan"
+        ]
+        Resource = [data.aws_dynamodb_table.dynamodb_table.arn]
       },
       {
         Effect = "Allow"
