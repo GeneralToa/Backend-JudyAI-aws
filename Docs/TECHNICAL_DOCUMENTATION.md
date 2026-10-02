@@ -663,10 +663,10 @@ Instead, confirm via the AWS CLI using `--authenticate-on-unsubscribe true`. Thi
 
    ```bash
    aws sns confirm-subscription \
-     --topic-arn arn:aws:sns:us-west-2:580118073904:rag-app-prod-alarms \
+     --topic-arn <ALARMS_TOPIC_ARN> \
      --token <TOKEN_FROM_URL> \
      --authenticate-on-unsubscribe true \
-     --region us-west-2
+     --region <ALARMS_TOPIC_REGION>
    ```
 
    > This works even if the scanner already confirmed and then deleted the subscription — SNS accepts the token regardless of the current subscription state and re-confirms it with `AuthenticateOnUnsubscribe: true`.
