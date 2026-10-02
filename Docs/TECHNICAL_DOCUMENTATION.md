@@ -652,14 +652,12 @@ Instead, confirm via the AWS CLI using `--authenticate-on-unsubscribe true`. Thi
 
 **Step-by-step (repeat for each email address):**
 
-1. Allow the scanner to auto-confirm the subscription (or click the link yourself — either way a UUID ARN is assigned in the SNS console).
-
-2. Find the confirmation URL in your browser history or address bar. It looks like:
+1. Find the confirmation URL in your browser history or address bar. It looks like:
    ```
-   https://sns.aws.amazon.com/confirmation.html?...&Token=<long-token>&...
+   https://sns.<alarm-topic-region>.amazon.com/confirmation.html?...&Token=<long-token>&...
    ```
 
-3. Extract the `Token=` value and run:
+2. Extract the `Token=` value and run:
 
    ```bash
    aws sns confirm-subscription \
@@ -671,7 +669,14 @@ Instead, confirm via the AWS CLI using `--authenticate-on-unsubscribe true`. Thi
 
    > This works even if the scanner already confirmed and then deleted the subscription — SNS accepts the token regardless of the current subscription state and re-confirms it with `AuthenticateOnUnsubscribe: true`.
 
-4. Verify in the SNS console that the subscription shows a proper UUID ARN and `AuthenticateOnUnsubscribe: true` in its attributes.
+3. Verify in the SNS console that the subscription shows a proper UUID ARN and run:
+   
+   ```bash
+   aws sns get-subscription-attributes \
+   --subscription-arn <arn> \
+   --query Attributes.ConfirmationWasAuthenticated
+   ```
+   It should show `true` in the output.
 
 ---
 
