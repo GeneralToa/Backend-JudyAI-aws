@@ -15,8 +15,10 @@ emit a playbook_section identifier on every finding (see 001_ai_schema.sql).
 Design notes
 ------------
 Clause text is copied verbatim. The playbook is the client's legal IP and its
-wording is not ours to tidy - known typos are reported by report_quality_issues()
-for the client to confirm rather than silently corrected.
+wording is not ours to tidy - suspected typos are reported by
+report_quality_issues() for the client to confirm rather than silently
+corrected. Only wording the client has confirmed in writing is corrected, from
+CLIENT_CONFIRMED_CORRECTIONS, and every correction is recorded in the output.
 
 Structural parsing is mechanical so it stays reproducible if the playbook is ever
 reissued. The parts the document's own markers cannot express reliably - a stable
@@ -105,13 +107,39 @@ IGNORED_MARKERS = {"and", "or", "because"}
 
 BECAUSE = re.compile(r"^\{?\s*because\s*\}?$", re.IGNORECASE)
 SEPARATOR = re.compile(r"^_{3,}$")
-MARKER = re.compile(r"\{([^}]*)\}")
+# One level of nesting is allowed: the ownership section has a marker that
+# contains "{section 9}", and a flat pattern stopped at the inner brace and left
+# the rest of the marker glued to the clause text.
+MARKER = re.compile(r"\{((?:[^{}]|\{[^{}]*\})*)\}")
 # The source is hand-written and at least one marker is never closed, e.g.
 # "{Replace this section with the following:" - treat a leading unclosed brace
 # as a marker running to the end of the line.
 UNCLOSED_MARKER = re.compile(r"^\{([^}]*)$")
 CONJUNCTION = re.compile(r"^\{?\s*(and|or)\s*\}?$", re.IGNORECASE)
 ATTACH = re.compile(r"attach(?:ed)?\s+the\s+(.+?exhibit)", re.IGNORECASE)
+
+# Markers that are an instruction in themselves and carry no clause text.
+NOTE_ONLY_TYPES = ("escalate_to_legal", "identify_contract_type", "cross_reference",
+                   "placeholder", "require_approval")
+
+# Wording the client confirmed in writing as typing errors: Eean Patterson's email
+# of 2 Oct 2026, answering our list of 16 Sep. Applied to the source text before
+# parsing, so triggers, actions and the raw copy all carry the corrected wording.
+# Matches include enough context to be unique (", on-transferable" would
+# otherwise also hit the correct "non-transferable"). A correction that no longer
+# matches - the playbook was reissued - is reported as a warning.
+CLIENT_CONFIRMED_CORRECTIONS = (
+    ("shall email the sole property", "shall be the sole property"),  # the client chose "be"
+    ("supplier grans the", "supplier grants the"),
+    (", on-transferable", ", non-transferable"),
+    ("of tis own", "of its own"),
+    ("Develiverables", "Deliverables"),
+    ("links will not be places", "links will not be placed"),
+    ("I comply with all applicable laws", "and comply with all applicable laws"),  # the client's wording
+    ("cannot be preformed", "cannot be performed"),
+    ("Supplier o perform", "Supplier to perform"),
+    ("othewise", "otherwise"),
+)
 
 
 def cell_text(tc):
@@ -283,11 +311,20 @@ def parse_actions(paragraphs):
             continue
 
         if markers:
+            types = [classify_marker(m) for m in markers]
+            opens_text_action = any(t not in (None, "ignore", "attach_exhibit") + NOTE_ONLY_TYPES
+                                    for t in types)
+            if pending is not None and not pending["text"] and stripped and not opens_text_action:
+                # The clause announced by the previous marker, with a placeholder or
+                # cross-reference inside it. It is that action's text. Without this
+                # the ownership and software development clauses were filed as notes
+                # and never reached the user as suggested wording.
+                pending["text"] = stripped
+                stripped = ""
             if pending:
                 actions.append(pending)
                 pending = None
-            for marker in markers:
-                action_type = classify_marker(marker)
+            for marker, action_type in zip(markers, types):
                 if action_type == "ignore":
                     continue
                 if action_type is None:
@@ -298,8 +335,7 @@ def parse_actions(paragraphs):
                     exhibit_in_marker = ATTACH.search(marker)
                     text = exhibit_in_marker.group(1).strip() if exhibit_in_marker else marker.strip()
                     actions.append({"type": "attach_exhibit", "text": text})
-                elif action_type in ("escalate_to_legal", "identify_contract_type",
-                                     "cross_reference", "placeholder", "require_approval"):
+                elif action_type in NOTE_ONLY_TYPES:
                     actions.append({"type": action_type, "note": marker.strip()})
                 else:
                     pending = {"type": action_type, "text": "", "note": marker.strip()}
@@ -322,12 +358,34 @@ def parse_actions(paragraphs):
     return actions, unmatched_markers
 
 
+def apply_confirmed_corrections(rows):
+    """Apply CLIENT_CONFIRMED_CORRECTIONS to every paragraph. Returns (rows, applied, warnings)."""
+    counts = {wrong: 0 for wrong, _ in CLIENT_CONFIRMED_CORRECTIONS}
+    corrected = []
+    for row in rows:
+        new_row = []
+        for cell in row:
+            new_cell = []
+            for para in cell:
+                for wrong, right in CLIENT_CONFIRMED_CORRECTIONS:
+                    if wrong in para:
+                        counts[wrong] += para.count(wrong)
+                        para = para.replace(wrong, right)
+                new_cell.append(para)
+            new_row.append(new_cell)
+        corrected.append(new_row)
+    applied = [{"from": wrong, "to": right, "occurrences": counts[wrong]}
+               for wrong, right in CLIENT_CONFIRMED_CORRECTIONS if counts[wrong]]
+    warnings = [f"confirmed correction no longer matches the source: {wrong!r}"
+                for wrong, _ in CLIENT_CONFIRMED_CORRECTIONS if not counts[wrong]]
+    return corrected, applied, warnings
+
+
 def build(docx_path):
-    rows = read_table(docx_path)
+    rows, corrections, warnings = apply_confirmed_corrections(read_table(docx_path))
     header, body_rows = rows[0], rows[1:]
 
     rules = []
-    warnings = []
 
     for row in body_rows:
         if len(row) < 3:
@@ -371,6 +429,10 @@ def build(docx_path):
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "generated_by": "Backend/playbook/build_rules.py",
         "column_headers": [" ".join(c) for c in header],
+        "client_confirmed_corrections": {
+            "confirmed_by": "Eean Patterson, email of 2 Oct 2026",
+            "applied": corrections,
+        },
         "rule_count": len(rules),
         "rules": rules,
     }, warnings
@@ -384,17 +446,24 @@ def report_quality_issues(document):
     contract wording, so the client should confirm the intended text rather than
     have us edit their legal language.
     """
+    # Not yet confirmed by the client (the ten sent on 16 Sep are corrected above).
     suspects = [
-        ("shall email the sole property", "likely 'shall remain the sole property'"),
-        ("supplier grans the", "likely 'grants'"),
-        ("on-transferable", "likely 'non-transferable'"),
-        ("of tis own", "likely 'of its own'"),
-        ("Develiverables", "likely 'Deliverables'"),
-        ("links will not be places", "likely 'placed'"),
-        ("preformed", "likely 'performed'"),
-        ("othewise", "likely 'otherwise'"),
-        ("Supplier o perform", "likely 'to perform'"),
-        ("I comply with all applicable laws", "likely 'to comply'"),
+        ("contemplated by his agreement", "likely 'this agreement'"),
+        ("prior to o independent", "likely 'prior to or independent'"),
+        ("Hower,", "likely 'However,'"),
+        ("consulting o training", "likely 'consulting or training'"),
+        ("give o provide", "likely 'give or provide'"),
+        ("to provide the severs", "likely 'the Services'"),
+        ("[company] other wise", "likely 'otherwise'"),
+        ("and y privacy", "likely 'any privacy'"),
+        ("described herin", "likely 'herein'"),
+        ("completion of the Servies", "likely 'Services'"),
+        ("not be placed o blogs", "likely 'placed on blogs'"),
+        ("keywording stuffing", "likely 'keyword stuffing'"),
+        ("buil or places by supplier", "likely 'built or placed'"),
+        ("that the lik be removed", "likely 'the link'"),
+        ("distribution o contact list", "likely 'distribution of contact lists'"),
+        ("shall be the considered the", "likely 'shall be considered the'"),
     ]
 
     found = []

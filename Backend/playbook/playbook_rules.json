@@ -1,12 +1,67 @@
 {
   "source_document": "Playbook_part2_full.docx",
-  "generated_at": "2026-09-18T17:33:45Z",
+  "generated_at": "2026-10-02T16:04:03Z",
   "generated_by": "Backend/playbook/build_rules.py",
   "column_headers": [
     "Purchasing Agreement Section",
     "If supplier OBJECTS to the Following Sentence:",
     "Then"
   ],
+  "client_confirmed_corrections": {
+    "confirmed_by": "Eean Patterson, email of 2 Oct 2026",
+    "applied": [
+      {
+        "from": "shall email the sole property",
+        "to": "shall be the sole property",
+        "occurrences": 1
+      },
+      {
+        "from": "supplier grans the",
+        "to": "supplier grants the",
+        "occurrences": 1
+      },
+      {
+        "from": ", on-transferable",
+        "to": ", non-transferable",
+        "occurrences": 1
+      },
+      {
+        "from": "of tis own",
+        "to": "of its own",
+        "occurrences": 1
+      },
+      {
+        "from": "Develiverables",
+        "to": "Deliverables",
+        "occurrences": 1
+      },
+      {
+        "from": "links will not be places",
+        "to": "links will not be placed",
+        "occurrences": 2
+      },
+      {
+        "from": "I comply with all applicable laws",
+        "to": "and comply with all applicable laws",
+        "occurrences": 1
+      },
+      {
+        "from": "cannot be preformed",
+        "to": "cannot be performed",
+        "occurrences": 1
+      },
+      {
+        "from": "Supplier o perform",
+        "to": "Supplier to perform",
+        "occurrences": 1
+      },
+      {
+        "from": "othewise",
+        "to": "otherwise",
+        "occurrences": 1
+      }
+    ]
+  },
   "rule_count": 11,
   "rules": [
     {
@@ -63,8 +118,8 @@
       "escalates_to_legal": false,
       "triggers": [
         {
-          "default_clause": "Neither Supplier nor Suppliers personnel requires access to any internal [ company] networks nor will any Supplier personnel be issued any [company] hardware( including laptops, phones, and tablets). Guest network access is sufficient for Supplier o perform the Services.”",
-          "condition": "Services cannot be preformed unless supplier is granted access to internal networks or is issued hardware",
+          "default_clause": "Neither Supplier nor Suppliers personnel requires access to any internal [ company] networks nor will any Supplier personnel be issued any [company] hardware( including laptops, phones, and tablets). Guest network access is sufficient for Supplier to perform the Services.”",
+          "condition": "Services cannot be performed unless supplier is granted access to internal networks or is issued hardware",
           "notes": []
         }
       ],
@@ -81,9 +136,9 @@
       ],
       "raw": {
         "if_supplier_objects": [
-          "Neither Supplier nor Suppliers personnel requires access to any internal [ company] networks nor will any Supplier personnel be issued any [company] hardware( including laptops, phones, and tablets). Guest network access is sufficient for Supplier o perform the Services.”",
+          "Neither Supplier nor Suppliers personnel requires access to any internal [ company] networks nor will any Supplier personnel be issued any [company] hardware( including laptops, phones, and tablets). Guest network access is sufficient for Supplier to perform the Services.”",
           "{Because}",
-          "Services cannot be preformed unless supplier is granted access to internal networks or is issued hardware"
+          "Services cannot be performed unless supplier is granted access to internal networks or is issued hardware"
         ],
         "then": [
           "{Replace this section with the following:",
@@ -151,7 +206,7 @@
       "escalates_to_legal": true,
       "triggers": [
         {
-          "default_clause": "Supplier will not have access to information provided to [company] by its customers, either directly, via email or othewise, or by the customer uploading the information in to judy account o product",
+          "default_clause": "Supplier will not have access to information provided to [company] by its customers, either directly, via email or otherwise, or by the customer uploading the information in to judy account o product",
           "condition": null,
           "notes": []
         }
@@ -168,7 +223,7 @@
       ],
       "raw": {
         "if_supplier_objects": [
-          "Supplier will not have access to information provided to [company] by its customers, either directly, via email or othewise, or by the customer uploading the information in to judy account o product"
+          "Supplier will not have access to information provided to [company] by its customers, either directly, via email or otherwise, or by the customer uploading the information in to judy account o product"
         ],
         "then": [
           "{ identify contract in use }{connect with legal agent}"
@@ -248,16 +303,12 @@
       "actions": [
         {
           "type": "insert",
-          "text": "",
+          "text": "Ownership. No customer Deliverables are contemplated by his agreement. In connection with the Services, Supplier may provide [company] training materials , books, manuals, templates, tools, a, binders, software presentations, video recordings, and audio recording’s that were prepared by supplier prior to o independent of this agreement and without use [companys] confidential information (training materials). The training materials shall be the sole property of supplier, provided that supplier grants the [company] a non-exclusive, non-transferable, fully paid, royalty-free, irrevocable license to reproduce and distribute the training materials internally throughout the company, Hower, [company shall not use any training materials to provide consulting o training services  of its own and shall not sell, transfer , or otherwise give o provide the training materials to any third party.",
           "note": "input the following"
         },
         {
           "type": "cross_reference",
-          "note": "This section modifies that license granted by Supplier to [Company] in {section 9"
-        },
-        {
-          "type": "note",
-          "text": "Ownership. No customer Deliverables are contemplated by his agreement. In connection with the Services, Supplier may provide [company] training materials , books, manuals, templates, tools, a, binders, software presentations, video recordings, and audio recording’s that were prepared by supplier prior to o independent of this agreement and without use [companys] confidential information (training materials). The training materials shall email the sole property of supplier, provided that supplier grans the [company] a non-exclusive, on-transferable, fully paid, royalty-free, irrevocable license to reproduce and distribute the training materials internally throughout the company, Hower, [company shall not use any training materials to provide consulting o training services  of tis own and shall not sell, transfer , or otherwise give o provide the training materials to any third party.  of the [ Company Terms]}"
+          "note": "This section modifies that license granted by Supplier to [Company] in {section 9} of the [ Company Terms]"
         },
         {
           "type": "escalate_to_legal",
@@ -281,7 +332,7 @@
         ],
         "then": [
           "{ input the following}",
-          "Ownership. No customer Deliverables are contemplated by his agreement. In connection with the Services, Supplier may provide [company] training materials , books, manuals, templates, tools, a, binders, software presentations, video recordings, and audio recording’s that were prepared by supplier prior to o independent of this agreement and without use [companys] confidential information (training materials). The training materials shall email the sole property of supplier, provided that supplier grans the [company] a non-exclusive, on-transferable, fully paid, royalty-free, irrevocable license to reproduce and distribute the training materials internally throughout the company, Hower, [company shall not use any training materials to provide consulting o training services  of tis own and shall not sell, transfer , or otherwise give o provide the training materials to any third party. {This section modifies that license granted by Supplier to [Company] in {section 9} of the [ Company Terms]}",
+          "Ownership. No customer Deliverables are contemplated by his agreement. In connection with the Services, Supplier may provide [company] training materials , books, manuals, templates, tools, a, binders, software presentations, video recordings, and audio recording’s that were prepared by supplier prior to o independent of this agreement and without use [companys] confidential information (training materials). The training materials shall be the sole property of supplier, provided that supplier grants the [company] a non-exclusive, non-transferable, fully paid, royalty-free, irrevocable license to reproduce and distribute the training materials internally throughout the company, Hower, [company shall not use any training materials to provide consulting o training services  of its own and shall not sell, transfer , or otherwise give o provide the training materials to any third party. {This section modifies that license granted by Supplier to [Company] in {section 9} of the [ Company Terms]}",
           "{ connect to legal  provider for  appropriate language}"
         ]
       }
@@ -305,16 +356,12 @@
       "actions": [
         {
           "type": "replace",
-          "text": "",
+          "text": "Technology. Suppliers  Deliverables or Goods may be incorporated by [Company] into its online, web-based applications or the platform provided by [company]. In developing the deliverables or goods, supplier will abide by the ‘software Development Guidelines  attached hereto. If any Deliverables or Goods or any items or process used by supplier to provide the severs, Deliverables or goods( collectively, “infringing items(s)”) becomes, or in the reasonable opinion of [company] is likely to become, the subject of an infringement or misappropriation claim, supplier will, in addition to its indemnification obligations provided in the [ Standard Purchase Terms] and to the other rights and remedies [company] may have under the [Standard Purchased Terms], promptly, at supplier’s expense, secure the right for [company] to continue using the infringing item or replace or modify the infringing item to make it non-infringing, provided that any such replacement or modification will not degrade the performance or quality of the affected Deliverables, Goods, or Services ( to the extend relevant). If  a credible claim of infringement is filed and neither of the above actions is commercially practical and if further use of the infringing item by [Company] is enjoined by the order  of a court of competent jurisdiction, and only in such event, supplier shall refund the cost of the infringing item and compensate [company] for resulting impacts, if any on the other deliverables, goods, or services",
           "note": "replace sentence with the following"
         },
         {
           "type": "placeholder",
           "note": "link software development guidelines"
-        },
-        {
-          "type": "note",
-          "text": "Technology. Suppliers  Deliverables or Goods may be incorporated by [Company] into its online, web-based applications or the platform provided by [company]. In developing the deliverables or goods, supplier will abide by the ‘software Development Guidelines  attached hereto. If any Develiverables or Goods or any items or process used by supplier to provide the severs, Deliverables or goods( collectively, “infringing items(s)”) becomes, or in the reasonable opinion of [company] is likely to become, the subject of an infringement or misappropriation claim, supplier will, in addition to its indemnification obligations provided in the [ Standard Purchase Terms] and to the other rights and remedies [company] may have under the [Standard Purchased Terms], promptly, at supplier’s expense, secure the right for [company] to continue using the infringing item or replace or modify the infringing item to make it non-infringing, provided that any such replacement or modification will not degrade the performance or quality of the affected Deliverables, Goods, or Services ( to the extend relevant). If  a credible claim of infringement is filed and neither of the above actions is commercially practical and if further use of the infringing item by [Company] is enjoined by the order  of a court of competent jurisdiction, and only in such event, supplier shall refund the cost of the infringing item and compensate [company] for resulting impacts, if any on the other deliverables, goods, or services"
         },
         {
           "type": "attach_exhibit",
@@ -328,7 +375,7 @@
         ],
         "then": [
           "{replace sentence with the following}",
-          "Technology. Suppliers  Deliverables or Goods may be incorporated by [Company] into its online, web-based applications or the platform provided by [company]. In developing the deliverables or goods, supplier will abide by the ‘software Development Guidelines { link software development guidelines} attached hereto. If any Develiverables or Goods or any items or process used by supplier to provide the severs, Deliverables or goods( collectively, “infringing items(s)”) becomes, or in the reasonable opinion of [company] is likely to become, the subject of an infringement or misappropriation claim, supplier will, in addition to its indemnification obligations provided in the [ Standard Purchase Terms] and to the other rights and remedies [company] may have under the [Standard Purchased Terms], promptly, at supplier’s expense, secure the right for [company] to continue using the infringing item or replace or modify the infringing item to make it non-infringing, provided that any such replacement or modification will not degrade the performance or quality of the affected Deliverables, Goods, or Services ( to the extend relevant). If  a credible claim of infringement is filed and neither of the above actions is commercially practical and if further use of the infringing item by [Company] is enjoined by the order  of a court of competent jurisdiction, and only in such event, supplier shall refund the cost of the infringing item and compensate [company] for resulting impacts, if any on the other deliverables, goods, or services",
+          "Technology. Suppliers  Deliverables or Goods may be incorporated by [Company] into its online, web-based applications or the platform provided by [company]. In developing the deliverables or goods, supplier will abide by the ‘software Development Guidelines { link software development guidelines} attached hereto. If any Deliverables or Goods or any items or process used by supplier to provide the severs, Deliverables or goods( collectively, “infringing items(s)”) becomes, or in the reasonable opinion of [company] is likely to become, the subject of an infringement or misappropriation claim, supplier will, in addition to its indemnification obligations provided in the [ Standard Purchase Terms] and to the other rights and remedies [company] may have under the [Standard Purchased Terms], promptly, at supplier’s expense, secure the right for [company] to continue using the infringing item or replace or modify the infringing item to make it non-infringing, provided that any such replacement or modification will not degrade the performance or quality of the affected Deliverables, Goods, or Services ( to the extend relevant). If  a credible claim of infringement is filed and neither of the above actions is commercially practical and if further use of the infringing item by [Company] is enjoined by the order  of a court of competent jurisdiction, and only in such event, supplier shall refund the cost of the infringing item and compensate [company] for resulting impacts, if any on the other deliverables, goods, or services",
           "{ Attach the Software development exhibit}"
         ]
       }
@@ -362,16 +409,12 @@
         },
         {
           "type": "optional",
-          "text": "",
+          "text": "All use of [company’s] corporate logo shall be in accordance with [company’s]  corporate logo usage guidelines available at",
           "note": "option add  verbiage and company guidelines link"
         },
         {
           "type": "placeholder",
           "note": "guidelines link"
-        },
-        {
-          "type": "note",
-          "text": "All use of [company’s] corporate logo shall be in accordance with [company’s]  corporate logo usage guidelines available at"
         },
         {
           "type": "require_approval",
@@ -439,7 +482,7 @@
         },
         {
           "type": "replace",
-          "text": "Marketing. Supplier will not provide online behavior tracking. In providing search engine optimization and/or link-building Services:\nSupplier agrees: (1) links will not be places on blogs/websites that are strongly SEO or  Affiliate Marketing related; (2) links will not be places o blogs/ websites that feature content/ advertising that endorse text link buying, link advertising; (3) Links will be built from reputable, quality websites on natural and longstanding URLS that are relevant for driving traffic and SEO benefits towards [company] (4) Links pointed to [company] owned websites will not be placed on blogs/websites that also include links to bad content( porn, pills, or casinos); (5) Supplier will not pay to place a link on a website without [companys] prior written consent; and (6) Supplier will not engage in any of the following practices: content scraping, keywording stuffing, hidden text or link, spamdexing.\nSupplier will disclose its SEO techniques of [company] as it pertains to the project and will maintain detailed reports of techniques used for the relevant project.\nSupplier will adhere to the Quality Guidelines available on Googles website: https://developers.google.com/search/docs/essentials\nIf [company] finds a link and /or linking page buil or places by supplier to be compromising in anyway. [company] reserves the right to ask that the lik be removed, or the page be modified or taken down.\nAny violation of the above clauses may result in immediate termination of the agreement by [company].”",
+          "text": "Marketing. Supplier will not provide online behavior tracking. In providing search engine optimization and/or link-building Services:\nSupplier agrees: (1) links will not be placed on blogs/websites that are strongly SEO or  Affiliate Marketing related; (2) links will not be placed o blogs/ websites that feature content/ advertising that endorse text link buying, link advertising; (3) Links will be built from reputable, quality websites on natural and longstanding URLS that are relevant for driving traffic and SEO benefits towards [company] (4) Links pointed to [company] owned websites will not be placed on blogs/websites that also include links to bad content( porn, pills, or casinos); (5) Supplier will not pay to place a link on a website without [companys] prior written consent; and (6) Supplier will not engage in any of the following practices: content scraping, keywording stuffing, hidden text or link, spamdexing.\nSupplier will disclose its SEO techniques of [company] as it pertains to the project and will maintain detailed reports of techniques used for the relevant project.\nSupplier will adhere to the Quality Guidelines available on Googles website: https://developers.google.com/search/docs/essentials\nIf [company] finds a link and /or linking page buil or places by supplier to be compromising in anyway. [company] reserves the right to ask that the lik be removed, or the page be modified or taken down.\nAny violation of the above clauses may result in immediate termination of the agreement by [company].”",
           "note": "replace sentence"
         }
       ],
@@ -460,7 +503,7 @@
           "{suggested consult legal expert regarding information gained via behavior tracking}",
           "{replace sentence}",
           "Marketing. Supplier will not provide online behavior tracking. In providing search engine optimization and/or link-building Services:",
-          "Supplier agrees: (1) links will not be places on blogs/websites that are strongly SEO or  Affiliate Marketing related; (2) links will not be places o blogs/ websites that feature content/ advertising that endorse text link buying, link advertising; (3) Links will be built from reputable, quality websites on natural and longstanding URLS that are relevant for driving traffic and SEO benefits towards [company] (4) Links pointed to [company] owned websites will not be placed on blogs/websites that also include links to bad content( porn, pills, or casinos); (5) Supplier will not pay to place a link on a website without [companys] prior written consent; and (6) Supplier will not engage in any of the following practices: content scraping, keywording stuffing, hidden text or link, spamdexing.",
+          "Supplier agrees: (1) links will not be placed on blogs/websites that are strongly SEO or  Affiliate Marketing related; (2) links will not be placed o blogs/ websites that feature content/ advertising that endorse text link buying, link advertising; (3) Links will be built from reputable, quality websites on natural and longstanding URLS that are relevant for driving traffic and SEO benefits towards [company] (4) Links pointed to [company] owned websites will not be placed on blogs/websites that also include links to bad content( porn, pills, or casinos); (5) Supplier will not pay to place a link on a website without [companys] prior written consent; and (6) Supplier will not engage in any of the following practices: content scraping, keywording stuffing, hidden text or link, spamdexing.",
           "Supplier will disclose its SEO techniques of [company] as it pertains to the project and will maintain detailed reports of techniques used for the relevant project.",
           "Supplier will adhere to the Quality Guidelines available on Googles website: https://developers.google.com/search/docs/essentials",
           "If [company] finds a link and /or linking page buil or places by supplier to be compromising in anyway. [company] reserves the right to ask that the lik be removed, or the page be modified or taken down.",
@@ -555,7 +598,7 @@
       "actions": [
         {
           "type": "replace",
-          "text": "Correspondence For any emails sent by supplier to current or prospective customers of [company] in connection with this Agreement, Supplier agrees that it shall be the considered the ‘sender” for purposes of CAN-SPAM. Supplier warrants that it will do the following when contacting anyone on [company] behalf:\nAlways be truthful about who they are,\nNot use false pretenses, such as fraudulent statements/impersonations to obtain information,\nI comply with all applicable laws, including CAN-SPAM  ( if applicable) and\nComply with all relevant, posted privacy statements  and terms of use.”",
+          "text": "Correspondence For any emails sent by supplier to current or prospective customers of [company] in connection with this Agreement, Supplier agrees that it shall be the considered the ‘sender” for purposes of CAN-SPAM. Supplier warrants that it will do the following when contacting anyone on [company] behalf:\nAlways be truthful about who they are,\nNot use false pretenses, such as fraudulent statements/impersonations to obtain information,\nand comply with all applicable laws, including CAN-SPAM  ( if applicable) and\nComply with all relevant, posted privacy statements  and terms of use.”",
           "note": "replace"
         },
         {
@@ -577,7 +620,7 @@
           "Correspondence For any emails sent by supplier to current or prospective customers of [company] in connection with this Agreement, Supplier agrees that it shall be the considered the ‘sender” for purposes of CAN-SPAM. Supplier warrants that it will do the following when contacting anyone on [company] behalf:",
           "Always be truthful about who they are,",
           "Not use false pretenses, such as fraudulent statements/impersonations to obtain information,",
-          "I comply with all applicable laws, including CAN-SPAM  ( if applicable) and",
+          "and comply with all applicable laws, including CAN-SPAM  ( if applicable) and",
           "Comply with all relevant, posted privacy statements  and terms of use.”",
           "{suggest contact legal}"
         ]
