@@ -96,6 +96,11 @@ def lambda_handler(event, context):
         elif route_key == "POST /contracts/{contractId}/cancel-routing":
             return handle_cancel_routing(contract_id, user_email)
         else:
+            # Check for async action invokes (from other Lambdas, no routeKey)
+            body = json.loads(event.get("body") or "{}") if event.get("body") else event
+            action = body.get("action")
+            if action == "notify_risk_flagged":
+                return handle_notify_risk_flagged(body)
             return response(400, {"error": f"Unsupported route: {route_key}"})
     except Exception as e:
         print(f"Error handling {route_key}: {e}")
@@ -433,10 +438,10 @@ def response(status_code, body):
 def send_email(to_address, subject, html_body):
     """Send an email via SES. Fails silently — never blocks the main flow."""
     try:
-        ses_client.send_email(
-            FromEmailAddress=SES_FROM_ADDRESS,
-            Destination={"ToAddresses": [to_address]},
-            Content={
+        kwargs = {
+            "FromEmailAddress": SES_FROM_ADDRESS,
+            "Destination": {"ToAddresses": [to_address]},
+            "Content": {
                 "Simple": {
                     "Subject": {"Data": subject, "Charset": "UTF-8"},
                     "Body": {
@@ -445,8 +450,12 @@ def send_email(to_address, subject, html_body):
                     },
                 }
             },
-            ConfigurationSetName=SES_CONFIGURATION_SET,
-        )
+        }
+        # Only pass ConfigurationSetName if the env var is set and non-empty
+        if SES_CONFIGURATION_SET:
+            kwargs["ConfigurationSetName"] = SES_CONFIGURATION_SET
+
+        ses_client.send_email(**kwargs)
         print(f"Email sent to {to_address}: {subject}")
     except Exception as e:
         print(f"Warning: failed to send email to {to_address}: {e}")
@@ -570,3 +579,75 @@ def handle_cancel_routing(contract_id, user_email):
         "status": "ready_for_review",
         "message": "Routing cancelled. Contract is ready to be re-routed.",
     })
+
+
+# =============================================================
+# Async action: notify_risk_flagged
+# Invoked by agent-risk-clause when high-severity risks are found.
+# Payload: {"action": "notify_risk_flagged", "contract_id": "...", "high_count": n}
+# =============================================================
+def handle_notify_risk_flagged(payload):
+    """Send email to contract uploader when high-severity risks are flagged."""
+    contract_id = payload.get("contract_id")
+    high_count  = payload.get("high_count", 0)
+
+    if not contract_id:
+        print("Warning: notify_risk_flagged called without contract_id")
+        return {"statusCode": 400, "body": "contract_id required"}
+
+    # Get contract name and uploader email
+    try:
+        result = execute_sql(
+            "SELECT original_filename, uploaded_by FROM app.contracts WHERE id = :id::uuid",
+            [{"name": "id", "value": {"stringValue": contract_id}}]
+        )
+        if not result.get("records"):
+            print(f"Warning: contract {contract_id} not found for risk notification")
+            return {"statusCode": 404, "body": "contract not found"}
+
+        row = result["records"][0]
+        contract_name  = row[0]["stringValue"]
+        uploader_email = row[1]["stringValue"] if not row[1].get("isNull") else None
+
+        if not uploader_email:
+            print(f"Warning: no uploader email for contract {contract_id}")
+            return {"statusCode": 200, "body": "no uploader email, skipped"}
+
+        notify_risk_flagged(uploader_email, contract_name, contract_id, high_count)
+        return {"statusCode": 200, "body": "notification sent"}
+
+    except Exception as e:
+        print(f"Warning: failed to send risk notification for contract {contract_id}: {e}")
+        return {"statusCode": 500, "body": str(e)}
+
+
+def notify_risk_flagged(uploader_email, contract_name, contract_id, high_count):
+    """Send email to uploader when high-severity risks are detected."""
+    review_url = f"{APP_URL}/review.html?contractId={contract_id}&name={contract_name}"
+    subject = f"High-severity risks flagged in: {contract_name}"
+    html = f"""
+    <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">
+        <div style="background:#7c4dff;padding:24px 32px;border-radius:8px 8px 0 0">
+            <h1 style="color:#fff;font-size:20px;margin:0">Judy.ai</h1>
+        </div>
+        <div style="background:#f9f9ff;padding:32px;border-radius:0 0 8px 8px;border:1px solid #e0e0e0">
+            <h2 style="font-size:18px;margin:0 0 12px">⚠️ Risks flagged before signing</h2>
+            <p style="color:#444;line-height:1.6">
+                The AI analysis found <strong>{high_count} high-severity risk{'' if high_count == 1 else 's'}</strong> in:
+            </p>
+            <div style="background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:14px 18px;margin:16px 0">
+                <strong style="font-size:0.9rem">{contract_name}</strong>
+            </div>
+            <p style="color:#444;line-height:1.6">
+                Please review the flagged risks before sending this contract for signature.
+            </p>
+            <a href="{review_url}" style="display:inline-block;background:#7c4dff;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:600;margin-top:8px">
+                Review Risks
+            </a>
+            <p style="color:#888;font-size:0.78rem;margin-top:24px">
+                This is an automated notification from Judy.ai. Suggestions are advisory only and do not modify the document.
+            </p>
+        </div>
+    </div>
+    """
+    send_email(uploader_email, subject, html)
