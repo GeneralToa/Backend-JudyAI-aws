@@ -15,6 +15,13 @@ Trigger:
 
 Writes judy_ai.agent_runs and judy_ai.contract_risks.
 
+Risk-flagged email (the SOW's third notification event): on the automatic run
+after upload, if any finding is high severity, the signature-workflow function
+is invoked asynchronously with {"action": "notify_risk_flagged", ...} and emails
+the uploader. Re-runs from analysis-api never notify, so a re-run cannot send a
+second email. Off when NOTIFY_FUNCTION_NAME is unset, and a failed notification
+never fails the analysis.
+
 Two analysis passes
 -------------------
 1. Playbook pass  - the client's 11-section playbook. Does the contract's
@@ -61,6 +68,7 @@ retry_config = Config(retries={"max_attempts": 3, "mode": "adaptive"})
 bedrock_runtime = boto3.client("bedrock-runtime", config=retry_config)
 rds_data_client = boto3.client("rds-data", config=retry_config)
 s3_client = boto3.client("s3")
+lambda_client = boto3.client("lambda")
 
 # --- Environment ---
 AURORA_CLUSTER_ARN = os.environ["AURORA_CLUSTER_ARN"]
@@ -78,6 +86,9 @@ RULES_BUCKET = os.environ.get("RULES_BUCKET")
 RULES_KEY = os.environ.get("RULES_KEY", "playbook/playbook_rules.json")
 
 MAX_CONTRACT_CHARS = int(os.environ.get("MAX_CONTRACT_CHARS", "120000"))
+
+# Function that sends the risk-flagged email (signature-workflow). Optional.
+NOTIFY_FUNCTION_NAME = os.environ.get("NOTIFY_FUNCTION_NAME", "").strip()
 
 # The SOW's four finding types, plus tracked_term for the client's own criterion
 # of "anything with a date or number attached" (renewal windows, notice periods,
@@ -596,13 +607,33 @@ def playbook_suggestion(rule):
         elif kind == "cross_reference" and action.get("note"):
             parts.append(f"Note: {action['note'].strip()}")
 
+    parts = list(dict.fromkeys(parts))  # two approval markers must not print twice
     return "\n\n".join(parts) if parts else None
 
 
 # =============================================================
 # Handler
 # =============================================================
+def notify_risk_flagged(contract_id, findings):
+    """Ask signature-workflow to email the uploader about high-severity findings."""
+    high_count = sum(1 for f in findings if f.get("severity") == "high")
+    if not NOTIFY_FUNCTION_NAME or high_count == 0:
+        return
+    try:
+        lambda_client.invoke(
+            FunctionName=NOTIFY_FUNCTION_NAME,
+            InvocationType="Event",
+            Payload=json.dumps({"action": "notify_risk_flagged", "contract_id": contract_id,
+                                "high_count": high_count}).encode("utf-8"),
+        )
+        print(f"Risk-flagged notification requested: {high_count} high finding(s)")
+    except ClientError as e:
+        # The analysis is stored either way. Log the real error, do not fail the run.
+        print(f"Risk-flagged notification failed for contract {contract_id}: {e}")
+
+
 def analyse(contract_id, extraction_id, run_id=None):
+    automatic = run_id is None  # analysis-api passes run_id on re-runs
     contract_text = fetch_extraction(extraction_id)
     if len(contract_text) > MAX_CONTRACT_CHARS:
         print(f"Contract text {len(contract_text)} chars, truncating to {MAX_CONTRACT_CHARS}")
@@ -652,6 +683,8 @@ def analyse(contract_id, extraction_id, run_id=None):
         complete_run(run_id, raw, usage_total, latency_ms)
 
         print(f"Run {run_id} succeeded: {inserted} risk(s) stored in {latency_ms} ms")
+        if automatic:
+            notify_risk_flagged(contract_id, findings)
         return {"run_id": run_id, "risks": inserted}
 
     except Exception as e:

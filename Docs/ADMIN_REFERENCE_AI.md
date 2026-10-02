@@ -5,7 +5,7 @@
 | Scope | The AI workstream of the SOW: document text extraction, the four AI agents, the AI data model and the AI API |
 | Audience | Administrators who deploy, configure and operate the Judy AI environment |
 | Environment | AWS account `580118073904`, region `us-west-2`, resource prefix `rag-app-prod` |
-| Version | 1.3, 2 October 2026. Values read from the live environment on 1 and 2 October. 1.1: extraction batch handling and rules packaging fixed. 1.2: per-user access on the AI API. 1.3: all three live; DLQ retention 14 days. |
+| Version | 1.4, 2 October 2026. Values read from the live environment on 1 and 2 October. 1.1: extraction batch handling and rules packaging fixed. 1.2: per-user access on the AI API. 1.3: all three live; DLQ retention 14 days. 1.4: client-confirmed playbook corrections; risk-flagged email trigger. |
 | Related | Infrastructure and application chapters of this reference; the API contract in [`AI_AGENTS_API.md`](AI_AGENTS_API.md) |
 
 This chapter is part of the single administrator reference document the SOW requires
@@ -122,6 +122,7 @@ or, better, add them to `main.tf` so the change survives the next deploy.
 | `AURORA_CLUSTER_ARN`, `AURORA_SECRET_ARN`, `AURORA_DATABASE` | all six | from SSM; `ragdb` | Data API target and the least-privilege AI secret |
 | `MODEL_ID` | the four agents | `us.amazon.nova-pro-v1:0` | Must be an **inference profile** ID. A bare model ID fails with "on-demand throughput isn't supported". |
 | `PROMPT_VERSION` | the four agents | *default* `risk-clause-v1`, `template-prepopulation-v1`, `summary-v1`, `obligation-tracking-v1` | Stored on every run so results can be traced to the prompt that produced them. Bump it when a prompt changes. |
+| `NOTIFY_FUNCTION_NAME` | risk agent | `rag-app-prod-signature-workflow` | When set, the automatic run after upload asks this function to email the uploader if any finding is high severity (the SOW's "risk flagged" notification). Re-runs never notify. Needs `lambda:InvokeFunction` on that function. Unset = no email. |
 | `MAX_CONTRACT_CHARS` | the four agents | *default* 120000 | Longer documents are truncated before the model sees them (about 40 pages; the SOW limit is 20 pages). |
 | `BDA_PROJECT_ARN`, `BDA_PROFILE_ARN` | document-extraction | from SSM; profile `us.data-automation-v1` | Which BDA project and profile to use |
 | `BDA_OUTPUT_BUCKET`, `BDA_OUTPUT_PREFIX` | extraction (both), template agent (bucket) | landing-zone bucket; `bda-output` | Where BDA writes `result.json` and page images |
@@ -260,7 +261,11 @@ the upload as in 6.2. Common causes are in section 7.
 
 ### 6.4 Update the playbook
 
-The playbook is Judy's legal content; its wording is copied verbatim and never edited by code.
+The playbook is Judy's legal content; its wording is copied verbatim. The only exceptions are
+corrections Judy has confirmed in writing: they are listed in `CLIENT_CONFIRMED_CORRECTIONS` in
+`build_rules.py`, applied before parsing, and recorded in `playbook_rules.json` under
+`client_confirmed_corrections` (ten, confirmed by Eean Patterson on 2 October 2026). The
+converter warns if a correction stops matching a reissued playbook.
 
 1. `python Backend/playbook/build_rules.py path/to/new_playbook.docx` regenerates
    `Backend/playbook/playbook_rules.json` and the agent's copy beside its handler, and reports
@@ -293,6 +298,7 @@ Run from `Backend/tests/` with AWS credentials for the account:
 | Script | Measures |
 |---|---|
 | `test_playbook_rules_in_sync.py` | Offline: the risk agent's copy of the rules matches the source |
+| `test_risk_notification.py` | Offline: the risk-flagged email is requested only on the automatic run, only for high findings, never fails the analysis |
 | `test_extraction_batch.py` | Offline: batch handling — parallel processing, a failing upload retried alone |
 | `evaluate_risk_agent.py` | Playbook rules found per test document, dated and numeric terms, invented missing-clause findings |
 | `evaluate_template_agent.py` | Document type and field placement on the stored BDA fixtures; draws the boxes on page images |
