@@ -159,7 +159,7 @@ def handle_update_template(template_id, event):
         updates.append("routing_type = :routing_type")
         params.append({"name": "routing_type", "value": {"stringValue": routing_type}})
     if signer_roles is not None:
-        updates.append("signer_roles = :signer_roles")
+        updates.append("signer_roles = :signer_roles::jsonb")
         params.append({"name": "signer_roles", "value": {"stringValue": json.dumps(signer_roles)}})
     if is_default is not None:
         updates.append("is_default = :is_default")

@@ -2214,7 +2214,6 @@ ${obligations.length ? obligations.map(o => `
                 showToast(`Download failed: ${err.message}`, "error");
             }
         }
-        }
 
         // =============================================================
         // Batch Signing

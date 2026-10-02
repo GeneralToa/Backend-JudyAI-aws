@@ -26,6 +26,7 @@ rds_data_client = boto3.client("rds-data", region_name="us-west-2")
 ssm_client = boto3.client("ssm", region_name="us-west-2")
 lambda_client = boto3.client("lambda", region_name="us-west-2")
 ses_client = boto3.client("sesv2", region_name="us-east-1")
+dynamodb_client = boto3.client("dynamodb", region_name="us-west-2")
 
 # --- Config ---
 OBLIGATION_AGENT_FUNCTION_NAME = os.environ.get(
@@ -33,8 +34,9 @@ OBLIGATION_AGENT_FUNCTION_NAME = os.environ.get(
     "rag-app-prod-agent-obligation-tracking",
 )
 SES_FROM_ADDRESS = os.environ.get("SES_FROM_ADDRESS", "noreply@judy.ai")
-SES_CONFIGURATION_SET = os.environ.get("SES_CONFIGURATION_SET", "rag-app-prod-notifications-config")
-APP_URL = os.environ.get("APP_URL", "https://rag-app.judy.ai")
+SES_CONFIGURATION_SET = os.environ.get("SES_CONFIGURATION_SET", "")  # leave empty until config set exists in us-east-1
+APP_URL = os.environ.get("APP_URL", "https://d8xv5mej9ouxr.cloudfront.net")
+DOCUMENTS_TABLE = os.environ.get("DOCUMENTS_TABLE", "rag-app-prod-documents")
 
 # --- SSM parameter names ---
 _AURORA_CLUSTER_ARN = None
@@ -73,6 +75,28 @@ def execute_sql(sql, parameters=None):
     if parameters:
         kwargs["parameters"] = parameters
     return rds_data_client.execute_statement(**kwargs)
+
+
+def get_uploader_email(contract_id):
+    """
+    Look up the uploader's email from DynamoDB using the contract_id.
+    app.contracts.uploaded_by stores the Cognito sub, not the email.
+    The email is in the DynamoDB documents table as uploaded_by.
+    Returns None if not found.
+    """
+    try:
+        result = dynamodb_client.scan(
+            TableName=DOCUMENTS_TABLE,
+            FilterExpression="contract_id = :cid",
+            ExpressionAttributeValues={":cid": {"S": contract_id}},
+            ProjectionExpression="uploaded_by",
+        )
+        items = result.get("Items", [])
+        if items:
+            return items[0].get("uploaded_by", {}).get("S")
+    except Exception as e:
+        print(f"Warning: failed to look up uploader email for contract {contract_id}: {e}")
+    return None
 
 
 def lambda_handler(event, context):
@@ -369,13 +393,12 @@ def handle_sign(contract_id, user_email, event):
         # Notify the sender (uploaded_by) that all parties have signed
         try:
             contract_result = execute_sql(
-                "SELECT original_filename, uploaded_by FROM app.contracts WHERE id = :id::uuid",
+                "SELECT original_filename FROM app.contracts WHERE id = :id::uuid",
                 [{"name": "id", "value": {"stringValue": contract_id}}]
             )
             if contract_result.get("records"):
-                row = contract_result["records"][0]
-                contract_name = row[0]["stringValue"]
-                sender_email  = row[1]["stringValue"] if not row[1].get("isNull") else None
+                contract_name = contract_result["records"][0][0]["stringValue"]
+                sender_email  = get_uploader_email(contract_id)
 
                 # Fetch all signers for the summary
                 all_signers_result = execute_sql(
@@ -438,10 +461,10 @@ def response(status_code, body):
 def send_email(to_address, subject, html_body):
     """Send an email via SES. Fails silently — never blocks the main flow."""
     try:
-        kwargs = {
-            "FromEmailAddress": SES_FROM_ADDRESS,
-            "Destination": {"ToAddresses": [to_address]},
-            "Content": {
+        ses_client.send_email(
+            FromEmailAddress=SES_FROM_ADDRESS,
+            Destination={"ToAddresses": [to_address]},
+            Content={
                 "Simple": {
                     "Subject": {"Data": subject, "Charset": "UTF-8"},
                     "Body": {
@@ -450,12 +473,8 @@ def send_email(to_address, subject, html_body):
                     },
                 }
             },
-        }
-        # Only pass ConfigurationSetName if the env var is set and non-empty
-        if SES_CONFIGURATION_SET:
-            kwargs["ConfigurationSetName"] = SES_CONFIGURATION_SET
-
-        ses_client.send_email(**kwargs)
+            # ConfigurationSetName intentionally omitted — config set doesn't exist in us-east-1 yet
+        )
         print(f"Email sent to {to_address}: {subject}")
     except Exception as e:
         print(f"Warning: failed to send email to {to_address}: {e}")
@@ -598,16 +617,15 @@ def handle_notify_risk_flagged(payload):
     # Get contract name and uploader email
     try:
         result = execute_sql(
-            "SELECT original_filename, uploaded_by FROM app.contracts WHERE id = :id::uuid",
+            "SELECT original_filename FROM app.contracts WHERE id = :id::uuid",
             [{"name": "id", "value": {"stringValue": contract_id}}]
         )
         if not result.get("records"):
             print(f"Warning: contract {contract_id} not found for risk notification")
             return {"statusCode": 404, "body": "contract not found"}
 
-        row = result["records"][0]
-        contract_name  = row[0]["stringValue"]
-        uploader_email = row[1]["stringValue"] if not row[1].get("isNull") else None
+        contract_name  = result["records"][0][0]["stringValue"]
+        uploader_email = get_uploader_email(contract_id)
 
         if not uploader_email:
             print(f"Warning: no uploader email for contract {contract_id}")
