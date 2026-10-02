@@ -5,7 +5,7 @@
 | Scope | The AI workstream of the SOW: document text extraction, the four AI agents, the AI data model and the AI API |
 | Audience | Administrators who deploy, configure and operate the Judy AI environment |
 | Environment | AWS account `580118073904`, region `us-west-2`, resource prefix `rag-app-prod` |
-| Version | 1.4, 2 October 2026. Values read from the live environment on 1 and 2 October. 1.1: extraction batch handling and rules packaging fixed. 1.2: per-user access on the AI API. 1.3: all three live; DLQ retention 14 days. 1.4: client-confirmed playbook corrections; risk-flagged email trigger. |
+| Version | 1.5, 3 October 2026. Values read from the live environment on 1 and 2 October. 1.1: extraction batch handling and rules packaging fixed. 1.2: per-user access on the AI API. 1.3: all three live; DLQ retention 14 days. 1.4: client-confirmed playbook corrections; risk-flagged email trigger. 1.5: CloudWatch alarms in place. |
 | Related | Infrastructure and application chapters of this reference; the API contract in [`AI_AGENTS_API.md`](AI_AGENTS_API.md) |
 
 This chapter is part of the single administrator reference document the SOW requires
@@ -227,7 +227,11 @@ SELECT contract_id, agent_type, started_at, error_message
 | Messages in `rag-app-prod-document-extraction-sqs-dlq` | SQS console | 0 |
 | Failed runs | query in section 5 | none, or explained |
 
-There are no CloudWatch alarms on these yet; section 9 recommends adding them.
+CloudWatch alarms watch the same signals (`IaC/8_monitoring`): errors (≥ 1), duration and throttles
+on each of the six AI functions, and messages in the extraction DLQ. They email the team through the
+SNS topic `rag-app-prod-alarms`. Confirm a new email subscription with
+`--authenticate-on-unsubscribe true`, as described in the technical documentation, otherwise a mail
+scanner following the unsubscribe link in an alarm email removes it.
 
 ### 6.2 Re-run analysis for a contract
 
@@ -380,7 +384,7 @@ account.
 | Dead-letter retention | **Done 1 Oct 2026:** 14 days, so a failure over a weekend is still there to resolve | — | Infrastructure (done) |
 | Playbook rules packaging | **Fixed 1 Oct 2026:** the agent's copy is committed, written by `build_rules.py` with the source, and checked by `test_playbook_rules_in_sync.py` | — | AI (done) |
 | Bedrock permission scope | Agent roles may invoke any Bedrock model | **Kept open by decision (2 Oct 2026):** Judy may switch to another model, so the permission is not tied to Nova Pro. Changing models is then a `MODEL_ID` change only (section 6.5). | — |
-| Alarms | None | Alarms on Lambda errors for the six AI functions and on DLQ depth > 0 | Infrastructure |
+| Alarms | **Done 2 Oct 2026:** errors, duration and throttles on all six AI functions and DLQ depth, emailing the team (SNS `rag-app-prod-alarms`) | At handover, replace the team emails with Judy's own | Infrastructure |
 | Model quotas | Not load-tested | Bedrock request and token quotas for Nova Pro are the real ceiling under load; check them in Service Quotas before a large batch | Infrastructure |
 
 ---
