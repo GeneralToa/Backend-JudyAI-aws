@@ -4,10 +4,13 @@ resource "aws_sns_topic" "alarms" {
 }
 
 resource "aws_sns_topic_subscription" "email" {
-  count     = local.config.sns.emailNotificationsEnabled ? 1 : 0
+  for_each = {
+    for email in try(local.config.sns.alarmEmails, []) : email => email
+    if local.config.sns.emailNotificationsEnabled
+  }
   topic_arn = aws_sns_topic.alarms.arn
   protocol  = "email"
-  endpoint  = local.config.sns.alarmEmail
+  endpoint  = each.key
 }
 
 # ================= LAMBDA =================

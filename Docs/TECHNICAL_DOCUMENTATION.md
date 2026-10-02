@@ -526,13 +526,73 @@ Applied globally via `provider.aws.default_tags`. The `awscc` provider uses `lis
 ### Prerequisites
 
 - Terraform >= 1.5.0
-- AWS CLI v2 configured with credentials (and access to the `TerraformRole`: `arn:aws:iam::580118073904:role/TerraformRole`)
+- AWS CLI v2
 - Access to Amazon Bedrock models (enable in the Bedrock console, `us-west-2`):
   - Cohere Embed Multilingual v3
   - Amazon Nova Pro v1 (cross-region inference profile `us.amazon.nova-pro-v1:0`)
   - Amazon Nova Lite v1
 
 > **No PostgreSQL client (`psql`) required.** All DB schema setup is automated by Terraform via the RDS Data API.
+
+---
+
+### Step 0: Configure AWS CLI
+
+#### How authentication works
+
+The `terraform` IAM user has **no IAM permissions of its own**. It authenticates with AWS CLI using long-term credentials (Access Key + Secret Key), and Terraform then assumes the `TerraformRole` (`arn:aws:iam::580118073904:role/TerraformRole`) via the `assume_role` block in each module's provider. All actual AWS permissions are granted to the role, not the user.
+
+#### 1. Create Access Key and Secret Key
+
+1. Sign in to the AWS Console as an administrator.
+2. Go to **IAM → Users → terraform → Security credentials**.
+3. Under **Access keys**, click **Create access key**.
+4. Select **Command Line Interface (CLI)** as the use case and confirm.
+5. Copy the **Access key ID** and **Secret access key** — the secret is only shown once.
+
+#### 2. Configure an AWS CLI named profile
+
+```bash
+aws configure --profile terraform-judy
+```
+
+Enter the values when prompted:
+
+```
+AWS Access Key ID:     <paste Access key ID>
+AWS Secret Access Key: <paste Secret access key>
+Default region name:   us-west-2
+Default output format: json
+```
+
+This creates a named profile (`terraform-judy`) in `~/.aws/credentials` and `~/.aws/config`. The profile name can be anything — just use it consistently in the next step.
+
+#### 3. Activate the profile before running Terraform
+
+Every terminal session that will run Terraform commands must have the profile exported:
+
+```bash
+export AWS_PROFILE=terraform-judy
+```
+
+Verify the assumed identity (should show the `TerraformRole` ARN, not the `terraform` user):
+
+```bash
+aws sts get-caller-identity
+```
+
+Expected output:
+```json
+{
+    "UserId": "AROA...:terraform-judy",
+    "Account": "580118073904",
+    "Arn": "arn:aws:iam::580118073904:assumed-role/TerraformRole/terraform-judy"
+}
+```
+
+> **Note**: `export AWS_PROFILE=...` is session-scoped. You must re-run it in every new terminal, or add it to your shell profile (`~/.zshrc` / `~/.bashrc`) to make it persistent.
+
+---
 
 ### Module Apply Order
 

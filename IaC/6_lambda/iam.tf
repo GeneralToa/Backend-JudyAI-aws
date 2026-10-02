@@ -334,7 +334,7 @@ resource "aws_iam_policy" "document_extraction_policy" {
 resource "aws_iam_policy" "agent_policy" {
   for_each = {
     for lambda_key, lambda in try(local.config.lambda, {}) : lambda_key => lambda
-    if contains(["agentRiskClause", "agentSummary", "agentObligationTracking"], lambda.role)
+    if contains(["agentSummary", "agentObligationTracking"], lambda.role)
   }
   name = "${local.identifier}-${each.value.functionName}-policy"
   policy = jsonencode({
@@ -371,6 +371,63 @@ resource "aws_iam_policy" "agent_policy" {
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
         Resource = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+      }
+    ]
+  })
+}
+
+# =============== AGENTS POLICY =================
+resource "aws_iam_policy" "agent_risk_clause_policy" {
+  for_each = {
+    for lambda_key, lambda in try(local.config.lambda, {}) : lambda_key => lambda
+    if lambda.role == "agentRiskClause"
+  }
+  name = "${local.identifier}-agent-risk-clause-policy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:GetInferenceProfile"
+        ]
+        Resource = "arn:aws:bedrock:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:inference-profile/${local.config.bedrock.inferenceProfileId}"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+        ]
+        Resource = data.aws_ssm_parameter.kms_aurora_postgres_arn.value
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "rds-data:ExecuteStatement"
+        ]
+        Resource = data.aws_ssm_parameter.aurora_postgres_arn.value
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = data.aws_ssm_parameter.judy_ai_writer_secret_arn.value
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = [
+          for lambda_key, lambda in try(local.config.lambda, {}) :
+          "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${lambda.functionName}"
+          if contains(["signatureWorkflow"], lambda.role)
+        ]
       }
     ]
   })
@@ -663,10 +720,19 @@ resource "aws_iam_role_policy_attachment" "lambda_document_extraction_role_att" 
 resource "aws_iam_role_policy_attachment" "lambda_agents_role_att" {
   for_each = {
     for lambda_key, lambda in try(local.config.lambda, {}) : lambda_key => lambda
-    if contains(["agentRiskClause", "agentSummary", "agentObligationTracking"], lambda.role)
+    if contains(["agentSummary", "agentObligationTracking"], lambda.role)
   }
   role       = aws_iam_role.lambda_role[each.key].name
   policy_arn = aws_iam_policy.agent_policy[each.key].arn
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_agent_risk_clause_role_att" {
+  for_each = {
+    for lambda_key, lambda_conf in try(local.config.lambda, []) : lambda_key => lambda_conf
+    if lambda_conf.role == "agentRiskClause"
+  }
+  role       = aws_iam_role.lambda_role[each.key].name
+  policy_arn = aws_iam_policy.agent_risk_clause_policy[each.key].arn
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_agent_template_prepopulation_role_att" {

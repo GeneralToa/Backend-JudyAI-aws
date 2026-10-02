@@ -6,8 +6,12 @@ tags:
 role_arn: "arn:aws:iam::580118073904:role/TerraformRole"
 
 sns:
-  emailNotificationsEnabled: false
-  alarmEmail: "eean@judy.ai"
+  emailNotificationsEnabled: true
+  alarmEmails: 
+    #- "eean@judy.ai"
+    - "muhammad.zuhairqadir@nclouds.com"
+    - "lloyd@nclouds.com"
+    - "andres.rodriguez@nclouds.com"
 
 lambda:
   dataUpload:
