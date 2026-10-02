@@ -25,7 +25,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   statistic           = "Sum"
   period              = 60
   evaluation_periods  = 2
-  threshold           = 0
+  threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = local.alarm_actions

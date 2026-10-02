@@ -644,6 +644,37 @@ DIST_ID="<from IaC/4_cloudfront outputs>"
 aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/*"
 ```
 
+### Confirming CloudWatch Alarm Email Subscriptions
+
+After `terraform apply` on `8_monitoring`, Terraform creates the `aws_sns_topic_subscription` resource and AWS sends a confirmation email to each address in `alarmEmails`. **Do not click the confirmation link directly.** Corporate email security scanners (Microsoft Defender Safe Links, Proofpoint, etc.) automatically follow every URL in incoming emails — including the unsubscribe link embedded in the "Subscription confirmed!" success page — causing the subscription to be confirmed and then immediately deleted within seconds.
+
+Instead, confirm via the AWS CLI using `--authenticate-on-unsubscribe true`. This flag sets the `AuthenticateOnUnsubscribe` attribute on the subscription, which makes SNS reject any unauthenticated unsubscribe request (i.e., anonymous link-follows from scanners). Only authenticated AWS API calls (CLI, SDK, Console) can unsubscribe the endpoint after this flag is set.
+
+**Step-by-step (repeat for each email address):**
+
+1. Allow the scanner to auto-confirm the subscription (or click the link yourself — either way a UUID ARN is assigned in the SNS console).
+
+2. Find the confirmation URL in your browser history or address bar. It looks like:
+   ```
+   https://sns.aws.amazon.com/confirmation.html?...&Token=<long-token>&...
+   ```
+
+3. Extract the `Token=` value and run:
+
+   ```bash
+   aws sns confirm-subscription \
+     --topic-arn arn:aws:sns:us-west-2:580118073904:rag-app-prod-alarms \
+     --token <TOKEN_FROM_URL> \
+     --authenticate-on-unsubscribe true \
+     --region us-west-2
+   ```
+
+   > This works even if the scanner already confirmed and then deleted the subscription — SNS accepts the token regardless of the current subscription state and re-confirms it with `AuthenticateOnUnsubscribe: true`.
+
+4. Verify in the SNS console that the subscription shows a proper UUID ARN and `AuthenticateOnUnsubscribe: true` in its attributes.
+
+---
+
 ### Destroying the Environment
 
 ```bash
