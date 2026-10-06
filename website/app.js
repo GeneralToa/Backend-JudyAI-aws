@@ -2,6 +2,21 @@
 // Judy.ai Knowledge Base - Application Logic
 // =============================================================
 
+// Decode the current user's email from the Cognito id_token JWT payload.
+// JWT structure: header.payload.signature — payload is base64url encoded JSON.
+function getCurrentUserEmail() {
+    try {
+        const token = sessionStorage.getItem("id_token");
+        if (!token) return null;
+        const payload = token.split(".")[1];
+        // base64url → base64 → JSON
+        const decoded = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+        return (decoded.email || "").toLowerCase();
+    } catch (e) {
+        return null;
+    }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     if (!isAuthenticated()) return;
 
@@ -1440,6 +1455,60 @@ function escapeHtml(text) {
                     loadAnalysisStatus(f.contract_id, f.contract_status || "uploaded");
                 }
             });
+
+            // For routed_for_signature contracts, fetch signers in parallel and
+            // show the Sign button + batch checkbox only if it's the current user's turn.
+            const currentUserEmail = getCurrentUserEmail();
+            const routedContracts = files.filter(f => f.contract_id && (f.contract_status || f.status) === "routed_for_signature");
+            if (currentUserEmail && routedContracts.length) {
+                routedContracts.forEach(f => {
+                    fetch(`${CONFIG.API_BASE_URL}/contracts/${f.contract_id}/signers`, {
+                        headers: { Authorization: getIdToken() },
+                    })
+                    .then(res => res.ok ? res.json() : Promise.reject())
+                    .then(data => {
+                        const signers = data.signers || [];
+                        // Find the lowest-order pending signer — that's who's turn it is
+                        const pending = signers
+                            .filter(s => s.status === "pending")
+                            .sort((a, b) => a.order - b.order);
+                        const isMyTurn = pending.length > 0 &&
+                            pending[0].email.toLowerCase() === currentUserEmail;
+
+                        const actionsCell = document.getElementById(`actions-${f.contract_id}`);
+                        if (!actionsCell) return;
+
+                        // Show/hide the Sign button
+                        const signBtn = actionsCell.querySelector(".btn-sign");
+                        if (signBtn) {
+                            signBtn.style.display = isMyTurn ? "" : "none";
+                        }
+
+                        // Show/hide the batch checkbox column for this row
+                        const row = actionsCell.closest(".file-row");
+                        if (row) {
+                            const checkLabel = row.querySelector(".batch-checkbox-label");
+                            if (checkLabel) {
+                                checkLabel.style.display = isMyTurn ? "" : "none";
+                            }
+                            // Remove batchable class so it won't be included in batch count
+                            if (!isMyTurn) {
+                                row.classList.remove("batchable");
+                                const cb = row.querySelector(".batch-checkbox");
+                                if (cb && cb.checked) {
+                                    cb.checked = false;
+                                    batchSelectedIds.delete(f.contract_id);
+                                    row.classList.remove("batch-selected");
+                                    updateBatchSignButton();
+                                }
+                            }
+                        }
+                    })
+                    .catch(() => {
+                        // On fetch failure, leave Sign button visible (fail open — user can still try)
+                    });
+                });
+            }
         }
 
         // =============================================================
