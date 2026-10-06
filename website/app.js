@@ -2062,8 +2062,8 @@ ${obligations.length ? obligations.map(o => `
             signatureModal.classList.remove("hidden");
         }
 
-        signatureModalCancel.addEventListener("click", () => signatureModal.classList.add("hidden"));
-        signatureModal.addEventListener("click", e => { if (e.target === signatureModal) signatureModal.classList.add("hidden"); });
+        signatureModalCancel.addEventListener("click", () => { batchSignMode = false; signatureModal.classList.add("hidden"); });
+        signatureModal.addEventListener("click", e => { if (e.target === signatureModal) { batchSignMode = false; signatureModal.classList.add("hidden"); } });
 
         // Tabs
         document.querySelectorAll(".sig-tab").forEach(tab => {
