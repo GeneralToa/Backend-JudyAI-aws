@@ -1468,12 +1468,20 @@ function escapeHtml(text) {
                     .then(res => res.ok ? res.json() : Promise.reject())
                     .then(data => {
                         const signers = data.signers || [];
-                        // Find the lowest-order pending signer — that's who's turn it is
-                        const pending = signers
-                            .filter(s => s.status === "pending")
-                            .sort((a, b) => a.order - b.order);
-                        const isMyTurn = pending.length > 0 &&
-                            pending[0].email.toLowerCase() === currentUserEmail;
+                        const routingType = data.routingType || "sequential";
+
+                        // Determine if it's this user's turn
+                        const pending = signers.filter(s => s.status === "pending");
+                        let isMyTurn = false;
+                        if (routingType === "parallel") {
+                            // Parallel: any pending signer can sign
+                            isMyTurn = pending.some(s => s.email.toLowerCase() === currentUserEmail);
+                        } else {
+                            // Sequential: only the lowest-order pending signer goes next
+                            const ordered = pending.sort((a, b) => a.order - b.order);
+                            isMyTurn = ordered.length > 0 &&
+                                ordered[0].email.toLowerCase() === currentUserEmail;
+                        }
 
                         const actionsCell = document.getElementById(`actions-${f.contract_id}`);
                         if (!actionsCell) return;

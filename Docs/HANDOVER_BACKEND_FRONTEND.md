@@ -5,7 +5,7 @@
 | Purpose | The backend and frontend section of the 1-hour handoff session (SOW acceptance criterion 13) |
 | Audience | Developers and administrators taking over the Judy AI environment |
 | Presenter | Backend / Frontend engineer |
-| Reference | [`TECHNICAL_DOCUMENTATION.md`](TECHNICAL_DOCUMENTATION.md) for full architecture detail |
+| Reference | [`TECHNICAL_DOCUMENTATION.md`](TECHNICAL_DOCUMENTATION.md) for full architecture detail; [`HANDOVER_AI.md`](HANDOVER_AI.md) for the AI session chapter; [`ADMIN_REFERENCE_AI.md`](ADMIN_REFERENCE_AI.md) for AI operations detail |
 
 ## Agenda
 
@@ -60,7 +60,7 @@ There are **12 Lambda functions**, all Python 3.13. Each has its own folder unde
 | `data_processor` | Processes SQS upload events; handles list/delete file API; starts KB ingestion jobs |
 | `ingestion_post_processor` | Monitors KB ingestion jobs via EventBridge Scheduler; updates DynamoDB status |
 | `retrieve_and_generate` | Powers the AI chat — 3-node Strands Agents pipeline (safety → retrieval → generation) |
-| `document_extraction` | Runs BDA on uploaded PDFs; stores extracted text; triggers the 3 pre-signing AI agents |
+| `document_extraction` | Runs BDA on uploaded PDFs and Word documents; stores extracted text; triggers the 3 pre-signing AI agents |
 | `agent_risk_clause` | AI agent — risk and clause analysis |
 | `agent_template_prepopulation` | AI agent — document type detection and field placement |
 | `agent_summary` | AI agent — plain-language summary |
