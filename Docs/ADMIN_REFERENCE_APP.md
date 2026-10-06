@@ -28,13 +28,12 @@ Upload
 
 Send for Signature (POST /contracts/{id}/route)
   └─ app.contract_signers rows created
-  └─ SES email sent to first signer (sequential) or all signers (parallel)
+  └─ SES email sent to ALL assigned signers (sequential and parallel alike)
   └─ status: routed_for_signature
 
 Sign (POST /contracts/{id}/sign)
   └─ app.signer_signatures row created
   └─ app.contract_signers status: signed
-  └─ if sequential and more pending: SES email to next signer
   └─ if all signed: status: signed → obligation agent invoked → SES to uploader
 
 Cancel Routing (POST /contracts/{id}/cancel-routing)
@@ -164,7 +163,8 @@ Changes take effect immediately for new routings; contracts already routed are n
 1. In Contracts, click **Send for Signature** on a `ready_for_review` contract.
 2. Enter signer email addresses and select roles (one row per signer, up to 5).
 3. Click **Send for Signature** — the backend creates `app.contract_signers` rows and sends
-   the first notification email (sequential: first signer only; parallel: all signers).
+   a notification email to all assigned signers simultaneously (sequential and parallel alike).
+   There is no follow-up "your turn" email when the previous signer completes.
 
 To re-send to different signers: click **Cancel Routing** first, then re-route. Cancel routing
 deletes all existing signer rows and resets the contract to `ready_for_review`.
@@ -185,21 +185,22 @@ For **parallel** contracts, any pending signer can sign in any order.
 When the last pending signer signs:
 - `app.contracts.status` is set to `signed`
 - A `completed` event is inserted in `app.signature_events`
-- SES email sent to the uploader (if `notify_signature_completed` is `true` in settings)
+- SES email sent to the uploader
 - `agent_obligation_tracking` is invoked asynchronously — failure is logged but does not
   affect the sign response
 
 ### 4.6 Email notifications
 
-Three notifications are controlled by system settings:
+Three SES emails are sent by the signature workflow. The admin panel has toggles for each
+(`notify_document_assigned`, `notify_signature_completed`, `notify_risk_flagged`) but the
+current code does not read these settings — emails always go out. The toggles are a planned
+control, not yet wired to the Lambda.
 
-| Setting key | When sent | To |
+| Email | When sent | To |
 |---|---|---|
-| `notify_document_assigned` | Contract routed for signature | Each assigned signer (sequential: first signer; parallel: all signers) |
-| `notify_signature_completed` | All signers have signed | Uploader |
-| `notify_risk_flagged` | AI finds a high-severity risk on upload | Uploader |
-
-All three default to `true`. Toggle them in the admin panel → Settings.
+| Document assigned | Contract routed for signature | All assigned signers (sequential and parallel alike) |
+| Signature completed | All signers have signed | Uploader |
+| Risk flagged | AI finds a high-severity risk on upload | Uploader |
 
 SES is configured in `us-east-1`. The from address must be verified in SES before emails will
 send. If emails are not arriving, check the SES sending quota and verify the from address in

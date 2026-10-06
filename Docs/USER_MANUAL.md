@@ -1,4 +1,4 @@
-# Judy.ai Knowledge Base - User Manual
+# Judy.ai - User Manual
 
 ## Table of Contents
 
@@ -246,7 +246,7 @@ Your administrator configures the approval template used when routing:
 
 | Type | How it works |
 |------|-------------|
-| **Sequential** | Signers sign one at a time, in the order they were entered. The next signer is notified only after the previous one signs. |
+| **Sequential** | Signers sign one at a time, in the order they were entered. All signers are notified by email when the contract is routed. |
 | **Parallel** | All signers can sign simultaneously in any order. |
 
 ### Cancel Routing
@@ -276,7 +276,7 @@ The **Sign** button appears only when it is your turn to sign:
 
 ### What happens next
 
-- **Sequential contract**: the next signer receives an email notification
+- **Sequential contract**: the Sign button will appear for the next pending signer (all signers were already notified by email when the contract was routed)
 - **Last signer**: the contract moves to `signed`, the uploader is notified, and obligation tracking begins automatically
 
 ---
