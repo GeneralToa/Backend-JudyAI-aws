@@ -294,8 +294,29 @@ resource "aws_cloudwatch_metric_alarm" "dynamodb_system_errors" {
   ok_actions          = local.alarm_actions
 }
 
+
+
+# ================== US-EAST-1 PROVIDER ==================
+# ================= SNS TOPIC (alarm notifications) =================
+resource "aws_sns_topic" "alarms-us-east-1" {
+  provider = aws.us-east-1
+  name     = "${local.identifier}-alarms-${data.aws_region.us-east-1.region}"
+}
+
+resource "aws_sns_topic_subscription" "email-us-east-1" {
+  for_each = {
+    for email in try(local.config.sns.alarmEmails, []) : email => email
+    if local.config.sns.emailNotificationsEnabled
+  }
+  region    = data.aws_region.us-east-1.region
+  topic_arn = aws_sns_topic.alarms-us-east-1.arn
+  protocol  = "email"
+  endpoint  = each.key
+}
+
 # ================= SES =================
 resource "aws_cloudwatch_metric_alarm" "ses_bounce_rate" {
+  region              = data.aws_region.us-east-1.region
   alarm_name          = "${local.identifier}-ses-bounce-rate"
   alarm_description   = "SES bounce rate is approaching the 5% AWS warning threshold"
   namespace           = "AWS/SES"
@@ -306,11 +327,12 @@ resource "aws_cloudwatch_metric_alarm" "ses_bounce_rate" {
   threshold           = 0.04
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
-  alarm_actions       = local.alarm_actions
-  ok_actions          = local.alarm_actions
+  alarm_actions       = local.alarm_actions_us_east_1
+  ok_actions          = local.alarm_actions_us_east_1
 }
 
 resource "aws_cloudwatch_metric_alarm" "ses_complaint_rate" {
+  region              = data.aws_region.us-east-1.region
   alarm_name          = "${local.identifier}-ses-complaint-rate"
   alarm_description   = "SES complaint rate is approaching the 0.1% AWS warning threshold"
   namespace           = "AWS/SES"
@@ -321,6 +343,6 @@ resource "aws_cloudwatch_metric_alarm" "ses_complaint_rate" {
   threshold           = 0.0009
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
-  alarm_actions       = local.alarm_actions
-  ok_actions          = local.alarm_actions
+  alarm_actions       = local.alarm_actions_us_east_1
+  ok_actions          = local.alarm_actions_us_east_1
 }
