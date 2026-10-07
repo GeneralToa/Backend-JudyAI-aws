@@ -527,30 +527,66 @@ Applied globally via `provider.aws.default_tags`. The `awscc` provider uses `lis
 
 - Terraform >= 1.5.0
 - AWS CLI v2
-- Access to Amazon Bedrock models (enable in the Bedrock console, `us-west-2`):
+- Access to Amazon Bedrock models — **one-time activation per AWS account**. Go to the Bedrock console in `us-west-2` → **Model access** → request access for:
   - Cohere Embed Multilingual v3
-  - Amazon Nova Pro v1 (cross-region inference profile `us.amazon.nova-pro-v1:0`)
+  - Amazon Nova Pro v1
   - Amazon Nova Lite v1
+
+  Access is usually granted within minutes. Cross-region inference profiles (`us.amazon.nova-pro-v1:0`, `us.data-automation-v1`) become available automatically once the underlying models are enabled — no separate request needed, but they may take a few minutes to appear after approval.
 
 > **No PostgreSQL client (`psql`) required.** All DB schema setup is automated by Terraform via the RDS Data API.
 
 ---
 
-### Step 0: Configure AWS CLI
+### Step 0: One-time IAM Bootstrap (first deploy only)
+
+This step is performed **once** by an AWS administrator before any Terraform commands are run. It creates the IAM identity (`terraform` user) and the role that all modules assume. This account does not use IAM Identity Center — authentication is done via long-term access keys on a dedicated IAM user with no direct permissions.
 
 #### How authentication works
 
 The `terraform` IAM user has **no IAM permissions of its own**. It authenticates with AWS CLI using long-term credentials (Access Key + Secret Key), and Terraform then assumes the `TerraformRole` (`arn:aws:iam::580118073904:role/TerraformRole`) via the `assume_role` block in each module's provider. All actual AWS permissions are granted to the role, not the user.
 
-#### 1. Create Access Key and Secret Key
+#### 1. Create the `terraform` IAM user
 
 1. Sign in to the AWS Console as an administrator.
-2. Go to **IAM → Users → terraform → Security credentials**.
-3. Under **Access keys**, click **Create access key**.
-4. Select **Command Line Interface (CLI)** as the use case and confirm.
-5. Copy the **Access key ID** and **Secret access key** — the secret is only shown once.
+2. Go to **IAM → Users → Create user**.
+3. Set the username to `terraform`.
+4. **Do not** enable Console access — this is a programmatic-only user.
+5. On the **Set permissions** page, do not attach any policies. Leave permissions empty.
+6. Complete the wizard. The user is created with zero permissions.
 
-#### 2. Configure an AWS CLI named profile
+#### 2. Create the `TerraformRole`
+
+1. Go to **IAM → Roles → Create role**.
+2. Select **AWS account** as the trusted entity type, then choose **This account**.
+3. Click **Next**, search for and select the **AdministratorAccess** managed policy.
+4. Name the role `TerraformRole` and create it.
+5. Once created, open the role and go to the **Trust relationships** tab → **Edit trust policy**.
+6. Replace the trust policy with the following, substituting `580118073904` with your actual account ID if different:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::580118073904:user/terraform"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+#### 3. Create Access Key and Secret Key for the `terraform` user
+
+1. Go to **IAM → Users → terraform → Security credentials**.
+2. Under **Access keys**, click **Create access key**.
+3. Select **Command Line Interface (CLI)** as the use case and confirm.
+4. Copy the **Access key ID** and **Secret access key** — the secret is only shown once.
+
+#### 4. Configure an AWS CLI named profile
 
 ```bash
 aws configure --profile terraform-judy
@@ -567,7 +603,7 @@ Default output format: json
 
 This creates a named profile (`terraform-judy`) in `~/.aws/credentials` and `~/.aws/config`. The profile name can be anything — just use it consistently in the next step.
 
-#### 3. Activate the profile before running Terraform
+#### 5. Activate the profile before running Terraform
 
 Every terminal session that will run Terraform commands must have the profile exported:
 
@@ -615,6 +651,23 @@ terraform apply
 ```
 
 The `sql.tf` null_resources run DB migrations automatically as part of `terraform apply` on `2_data`. Re-runs are triggered if either the SQL file content (`filemd5`) or the Aurora cluster ARN changes.
+
+### Requesting SES Production Access (one-time)
+
+New AWS accounts start with SES in **sandbox mode**, which only allows sending email to verified addresses. After deploying `3_ses`, submit a production access request so the application can send to any recipient (signature notifications, alerts, etc.).
+
+1. Go to **AWS Support Center → Create case → Service quota increase**.
+2. Select **Service: SES** and **Quota name: Email sending**.
+3. Fill in the request form:
+   - **Mail type**: Transactional
+   - **Website URL**: `<WEBSITE>`
+   - **Use case description**: Describe the app (contract management platform sending signature workflow notifications and system alerts to verified business users)
+   - **Region**: `<AWS_REGION>`
+4. Submit. Approval typically takes 24–48 hours.
+
+Until approved, the application can still send emails — but only to addresses you have manually verified under **SES → Verified identities**.
+
+---
 
 ### Deploying Lambda Code Changes
 
