@@ -652,20 +652,79 @@ terraform apply
 
 The `sql.tf` null_resources run DB migrations automatically as part of `terraform apply` on `2_data`. Re-runs are triggered if either the SQL file content (`filemd5`) or the Aurora cluster ARN changes.
 
+### SES: Import Existing Resources into Terraform (one-time)
+
+The SES domain identity and supporting resources (`judy.ai`) were created manually in the AWS Console before Terraform was set up. The `IaC/3_ses` module describes those resources but does not own them in state yet. **Run `terraform import` for each resource before the first `terraform apply`** — otherwise Terraform will try to create duplicates or fail on conflicts.
+
+```bash
+cd IaC/3_ses
+terraform init
+terraform workspace select prod
+
+# Domain identity
+terraform import aws_sesv2_email_identity.ses_email_identity judy.ai
+
+# Configuration set
+terraform import 'aws_sesv2_configuration_set.configuration["notifications"]' rag-app-prod-notifications-config
+
+# EventBridge event destination on the configuration set
+terraform import 'aws_sesv2_configuration_set_event_destination.eventbridge["notifications"]' rag-app-prod-notifications-config/eventbridge
+
+# Email template
+terraform import 'aws_ses_template.ses_template["welcome"]' welcomeTemplate
+
+# CloudWatch log group
+terraform import aws_cloudwatch_log_group.ses_logs /aws/ses/events
+
+# EventBridge rule
+terraform import aws_cloudwatch_event_rule.ses_events ses-events
+
+# EventBridge target — look up the target ID first:
+#   aws events list-targets-by-rule --rule ses-events --region us-west-2
+# Then import using the rule/target-id format:
+terraform import aws_cloudwatch_event_target.logs ses-events/<TARGET_ID>
+```
+
+The 3 DKIM Route53 records are also managed by Terraform (`aws_route53_record.ses_dkim[0..2]`). Their record names contain the DKIM token values, which are unique per identity. Look them up from the Console (**SES → Verified identities → judy.ai → DKIM**) or CLI:
+
+```bash
+aws sesv2 get-email-identity --email-identity judy.ai \
+  --query "DkimAttributes.Tokens" --output text --region us-west-2
+```
+
+Then import each record using the format `ZONE_ID_RECORD_NAME_TYPE`:
+
+```bash
+ZONE_ID=$(aws route53 list-hosted-zones-by-name \
+  --dns-name judy.ai --query "HostedZones[0].Id" --output text | cut -d/ -f3)
+
+terraform import 'aws_route53_record.ses_dkim[0]' ${ZONE_ID}_<TOKEN_0>._domainkey.judy.ai_CNAME
+terraform import 'aws_route53_record.ses_dkim[1]' ${ZONE_ID}_<TOKEN_1>._domainkey.judy.ai_CNAME
+terraform import 'aws_route53_record.ses_dkim[2]' ${ZONE_ID}_<TOKEN_2>._domainkey.judy.ai_CNAME
+```
+
+After all imports succeed, run `terraform plan` — the output should show **no changes** if every resource was imported correctly.
+
+---
+
 ### Requesting SES Production Access (one-time)
 
-New AWS accounts start with SES in **sandbox mode**, which only allows sending email to verified addresses. After deploying `3_ses`, submit a production access request so the application can send to any recipient (signature notifications, alerts, etc.).
+New AWS accounts start with SES in **sandbox mode**, which only allows sending email to verified addresses. Once the environment is stable, submit a production access request so the application can send to any recipient (signature notifications, alerts, etc.).
+
+> **Current status (as of 2026-10)**: The production access request was **denied** by AWS. The denial reason is that a separate WorldMe account associated with this AWS account is currently paused in the Oregon region (`us-west-2`). AWS will not approve the SES production access request until that account's suspended state is resolved. **No further SES production access requests should be submitted until the WorldMe account issue is cleared.**
+
+When that blocker is resolved, submit the request:
 
 1. Go to **AWS Support Center → Create case → Service quota increase**.
 2. Select **Service: SES** and **Quota name: Email sending**.
 3. Fill in the request form:
    - **Mail type**: Transactional
    - **Website URL**: `<WEBSITE>`
-   - **Use case description**: Describe the app (contract management platform sending signature workflow notifications and system alerts to verified business users)
-   - **Region**: `<AWS_REGION>`
+   - **Use case description**: Contract management platform sending signature workflow notifications and system alerts to verified business users
+   - **Region**: `us-east-1`
 4. Submit. Approval typically takes 24–48 hours.
 
-Until approved, the application can still send emails — but only to addresses you have manually verified under **SES → Verified identities**.
+Until approved, the application can send emails only to addresses manually verified under **SES → Verified identities**.
 
 ---
 

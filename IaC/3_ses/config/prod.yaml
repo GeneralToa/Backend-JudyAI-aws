@@ -1,4 +1,4 @@
-region: "us-west-2"
+region: "us-east-1"
 identifier: "rag-app"
 tags: 
   Workspace: "IaC/ses"
@@ -10,7 +10,7 @@ ses:
   privateZone: false
   configurationSet:
     notifications:
-      name: "notifications-config"
+      name: "my-first-configuration-set"
       sendingEnabled: true
   templates:
     welcome:
