@@ -251,15 +251,18 @@ def handle_get_signers(contract_id):
 
     result = execute_sql(
         """
-        SELECT id, signer_email, signer_role, signer_order, status, assigned_at, signed_at
-        FROM app.contract_signers
-        WHERE contract_id = :contract_id::uuid
-        ORDER BY signer_order ASC
+        SELECT cs.id, cs.signer_email, cs.signer_role, cs.signer_order, cs.status,
+               cs.assigned_at, cs.signed_at, at.routing_type
+        FROM app.contract_signers cs
+        LEFT JOIN app.approval_templates at ON at.id = cs.template_id
+        WHERE cs.contract_id = :contract_id::uuid
+        ORDER BY cs.signer_order ASC
         """,
         [{"name": "contract_id", "value": {"stringValue": contract_id}}]
     )
 
     signers = []
+    routing_type = "sequential"  # safe default
     for row in result.get("records", []):
         signers.append({
             "signerId":    row[0]["stringValue"],
@@ -270,10 +273,14 @@ def handle_get_signers(contract_id):
             "assignedAt":  row[5].get("stringValue"),
             "signedAt":    row[6].get("stringValue") if not row[6].get("isNull") else None,
         })
+        # All rows share the same template, grab routing_type from first non-null
+        if not row[7].get("isNull"):
+            routing_type = row[7]["stringValue"]
 
     return response(200, {
-        "contractId": contract_id,
-        "signers": signers,
+        "contractId":  contract_id,
+        "routingType": routing_type,
+        "signers":     signers,
     })
 
 
@@ -314,9 +321,46 @@ def handle_sign(contract_id, user_email, event):
     signer_row = signer_result["records"][0]
     signer_id = signer_row[0]["stringValue"]
     signer_status = signer_row[1]["stringValue"]
+    signer_order = signer_row[2]["longValue"]
 
     if signer_status == "signed":
         return response(409, {"error": "You have already signed this contract"})
+
+    # Enforce turn order for sequential contracts
+    routing_result = execute_sql(
+        """
+        SELECT at.routing_type
+        FROM app.contract_signers cs
+        JOIN app.approval_templates at ON at.id = cs.template_id
+        WHERE cs.contract_id = :contract_id::uuid AND cs.signer_email = :email
+        LIMIT 1
+        """,
+        [
+            {"name": "contract_id", "value": {"stringValue": contract_id}},
+            {"name": "email",       "value": {"stringValue": user_email}},
+        ]
+    )
+    routing_type = "sequential"
+    if routing_result.get("records"):
+        rt = routing_result["records"][0][0]
+        if not rt.get("isNull"):
+            routing_type = rt["stringValue"]
+
+    if routing_type == "sequential":
+        earlier_pending = execute_sql(
+            """
+            SELECT COUNT(*) FROM app.contract_signers
+            WHERE contract_id = :contract_id::uuid
+              AND signer_order < :signer_order
+              AND status = 'pending'
+            """,
+            [
+                {"name": "contract_id",  "value": {"stringValue": contract_id}},
+                {"name": "signer_order", "value": {"longValue": signer_order}},
+            ]
+        )
+        if earlier_pending["records"][0][0]["longValue"] > 0:
+            return response(403, {"error": "It is not your turn to sign. Earlier signers have not signed yet."})
 
     # Save the signature
     execute_sql(
