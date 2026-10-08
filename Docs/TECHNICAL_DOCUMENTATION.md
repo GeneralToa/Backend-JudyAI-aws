@@ -527,6 +527,7 @@ Applied globally via `provider.aws.default_tags`. The `awscc` provider uses `lis
 
 - Terraform >= 1.5.0
 - AWS CLI v2
+- **Python 3.13 + pip3** — required only when deploying `6_lambda` with `lambdaLayer.enabled: true` (currently enabled in `prod`). Terraform's `null_resource.install_dependencies` runs `pip3 install` locally to build the Lambda layer zip before uploading it. Verify with `python3 --version` and `pip3 --version`.
 - Access to Amazon Bedrock models — **one-time activation per AWS account**. Go to the Bedrock console in `us-west-2` → **Model access** → request access for:
   - Cohere Embed Multilingual v3
   - Amazon Nova Pro v1

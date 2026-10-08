@@ -1,4 +1,22 @@
 # ================= LAMBDA FUNCTIONS =================
+resource "null_resource" "install_dependencies" {
+  count = local.config.lambdaLayer.enabled ? 1 : 0
+
+  provisioner "local-exec" {
+    command = <<EOT
+      OUTPUT_DIR=$(pwd)/functions/dependencies_layer && \
+      mkdir -p "$OUTPUT_DIR" && \
+      cd ${path.module}/../../Backend/lambdas/dependencies_layer && \
+      pip3 install -r requirements.txt --platform manylinux2014_x86_64 --only-binary=:all: --python-version 3.13 -t python/ && \
+      zip -r "$OUTPUT_DIR/${local.config.lambdaLayer.fileName}" python && \
+      rm -rf python/
+    EOT
+  }
+
+  triggers = {
+    requirements_hash = filemd5("${path.module}/../../Backend/lambdas/dependencies_layer/requirements.txt")
+  }
+}
 resource "aws_lambda_layer_version" "lambda_layer" {
   count                    = local.config.lambdaLayer.enabled ? 1 : 0
   filename                 = "${path.module}/functions/dependencies_layer/${local.config.lambdaLayer.fileName}"
@@ -6,6 +24,7 @@ resource "aws_lambda_layer_version" "lambda_layer" {
   description              = "Common dependencies for Lambda functions"
   compatible_runtimes      = local.config.lambdaLayer.compatibleRuntimes
   compatible_architectures = local.config.lambdaLayer.compatibleArchitectures
+  depends_on               = [null_resource.install_dependencies]
 }
 
 resource "aws_lambda_function" "lambda" {
@@ -18,7 +37,11 @@ resource "aws_lambda_function" "lambda" {
   timeout       = each.value.timeout
   memory_size   = try(each.value.memorySize, 128)
 
-  layers  = each.value.lambdaLayer.enabled ? (local.config.lambdaLayer.enabled ? concat(aws_lambda_layer_version.lambda_layer[0].arn, try(each.value.lambdaLayer.arns, [])) : try(each.value.lambdaLayer.arns, [])) : local.config.lambdaLayer.enabled ? aws_lambda_layer_version.lambda_layer[0].arn : []
+  layers = each.value.lambdaLayer.enabled ? (
+    try(each.value.lambdaLayer.localLambdaLayer, false) && local.config.lambdaLayer.enabled
+    ? concat([aws_lambda_layer_version.lambda_layer[0].arn], try(each.value.lambdaLayer.arns, []))
+    : try(each.value.lambdaLayer.arns, [])
+  ) : []
   runtime = each.value.runtime
 
   dynamic "environment" {

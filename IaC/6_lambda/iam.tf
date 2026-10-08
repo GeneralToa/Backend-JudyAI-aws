@@ -535,7 +535,7 @@ resource "aws_iam_policy" "signature_workflow_policy" {
         Resource = [
           for lambda_key, lambda in try(local.config.lambda, {}) :
           "arn:aws:lambda:${local.config.region}:${data.aws_caller_identity.caller_identity.account_id}:function:${local.identifier}-${lambda.functionName}"
-          if contains(["agentObligationTracking"], lambda.role)
+          if contains(["agentObligationTracking", "signatureWorkflow"], lambda.role)
         ]
       },
       {
@@ -545,6 +545,14 @@ resource "aws_iam_policy" "signature_workflow_policy" {
           "sesv2:SendEmail"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject"
+        ]
+        Resource = "${data.aws_s3_bucket.s3_bucket.arn}/*"
       }
     ]
   })

@@ -21,14 +21,12 @@ bedrock:
   dataAutomationProfileId: "us.data-automation-v1"
 
 lambdaLayer:
-  enabled: false
+  enabled: true
   fileName: "dependencies.zip"
   compatibleRuntimes:
-   - "nodejs24.x"
-   - "python3.12"
+   - "python3.13"
   compatibleArchitectures:
    - "x86_64"
-   - "arm64"
 
 
 lambda:
@@ -72,6 +70,7 @@ lambda:
     vpcConfig: false
     lambdaLayer:
       enabled: true
+      localLambdaLayer: false
       arns:
         - "arn:aws:lambda:us-west-2:856699698935:layer:strands-agents-py3_13-x86_64:2"
     eventSourceMapping:
@@ -140,10 +139,12 @@ lambda:
     outputCodePath: "signature_workflow/function.zip"
     handler: "handler.lambda_handler"
     runtime: "python3.13"
-    timeout: 30
+    timeout: 120
+    memorySize: 512
     vpcConfig: false
     lambdaLayer:
-      enabled: false
+      enabled: true
+      localLambdaLayer: true
     eventSourceMapping:
       enabled: false
   agentSummary:
