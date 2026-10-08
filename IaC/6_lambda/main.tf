@@ -25,6 +25,10 @@ resource "aws_lambda_layer_version" "lambda_layer" {
   compatible_runtimes      = local.config.lambdaLayer.compatibleRuntimes
   compatible_architectures = local.config.lambdaLayer.compatibleArchitectures
   depends_on               = [null_resource.install_dependencies]
+
+  lifecycle {
+    replace_triggered_by = [null_resource.install_dependencies]
+  }
 }
 
 resource "aws_lambda_function" "lambda" {

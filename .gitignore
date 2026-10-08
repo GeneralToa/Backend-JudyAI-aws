@@ -5,4 +5,3 @@ terraform.tfstate.backup
 */*/*/output/
 __pycache__/
 *.pyc
-IaC/6_lambda/functions/
