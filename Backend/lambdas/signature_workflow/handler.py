@@ -950,31 +950,29 @@ def _stamp_text(draw, text, px, py, pw, ph, img_w, img_h):
 
 
 def _image_to_pdf_page(img):
-    """Convert a PIL Image to a single-page PDF bytes using reportlab."""
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Image as RLImage
-    from reportlab.lib.units import inch
+    """Convert a PIL Image to a single-page PDF bytes using reportlab canvas directly.
+    Uses low-level canvas (not SimpleDocTemplate) to avoid margin/frame constraints.
+    """
+    from reportlab.pdfgen import canvas as rl_canvas
 
     img_w, img_h = img.size
-    # Convert PIL image to bytes for reportlab
+
+    # Convert PIL image to JPEG bytes
     img_buf = io.BytesIO()
     img.save(img_buf, format="JPEG", quality=92)
     img_buf.seek(0)
 
-    # Page size in points (72 pt/inch). Scale image to fit letter-width while
-    # preserving aspect ratio. We use the image's native aspect ratio.
-    page_w_pt = img_w * 72 / 96  # assume 96 dpi for rasterised images
+    # Page size in points — BDA rasterises at 150 dpi typically,
+    # but we use 96 dpi as a safe default for coordinate consistency.
+    page_w_pt = img_w * 72 / 96
     page_h_pt = img_h * 72 / 96
 
     out_buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        out_buf,
-        pagesize=(page_w_pt, page_h_pt),
-        leftMargin=0, rightMargin=0, topMargin=0, bottomMargin=0,
-    )
-
-    rl_img = RLImage(img_buf, width=page_w_pt, height=page_h_pt)
-    doc.build([rl_img])
+    c = rl_canvas.Canvas(out_buf, pagesize=(page_w_pt, page_h_pt))
+    # drawImage fills the entire page with no margins
+    c.drawImage(img_buf, 0, 0, width=page_w_pt, height=page_h_pt)
+    c.showPage()
+    c.save()
     return out_buf.getvalue()
 
 
