@@ -913,10 +913,13 @@ def _stamp_signature(draw, base_img, sig_data_b64, px, py, pw, ph):
         sig_bytes = base64.b64decode(sig_data_b64)
         sig_img = Image.open(io.BytesIO(sig_bytes)).convert("RGBA")
 
-        # Resize to fit the field box, preserving aspect ratio
-        sig_img.thumbnail((pw, ph), Image.LANCZOS)
+        # Scale up: give the signature 2x the field height so it's clearly visible,
+        # but cap at the field width to avoid overflowing horizontally
+        target_h = ph * 2
+        target_w = pw
+        sig_img.thumbnail((target_w, target_h), Image.LANCZOS)
 
-        # Composite onto base image (handle transparency)
+        # Center horizontally in box, align vertically to center
         paste_x = px + (pw - sig_img.width) // 2
         paste_y = py + (ph - sig_img.height) // 2
         base_img.paste(sig_img, (paste_x, paste_y), sig_img)
@@ -925,25 +928,26 @@ def _stamp_signature(draw, base_img, sig_data_b64, px, py, pw, ph):
 
 
 def _stamp_text(draw, text, px, py, pw, ph, img_w, img_h):
-    """Draw text into a field box, auto-sizing the font."""
+    """Draw text into a field box, auto-sizing the font to fill it."""
     from PIL import ImageFont
     if not text:
         return
     try:
-        # Font size proportional to field height; min 10px, max 40px
-        font_size = max(10, min(40, int(ph * 0.55)))
+        # Font size: fill ~80% of the field height, min 12px, max 60px
+        font_size = max(12, min(60, int(ph * 0.8)))
         try:
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
         except Exception:
             font = ImageFont.load_default()
+
+        # Draw with a subtle white background for readability
+        draw.rectangle([px, py, px + pw, py + ph], fill=(255, 255, 255, 200))
 
         # Center text vertically in field box
         bbox = draw.textbbox((0, 0), text, font=font)
         text_h = bbox[3] - bbox[1]
         text_y = py + (ph - text_h) // 2
 
-        # Draw with a subtle white background for readability
-        draw.rectangle([px, py, px + pw, py + ph], fill=(255, 255, 255, 200))
         draw.text((px + 4, text_y), text, fill=(20, 20, 40), font=font)
     except Exception as e:
         print(f"Warning: could not stamp text '{text}': {e}")
