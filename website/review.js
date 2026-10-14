@@ -914,29 +914,39 @@ function openRouteModal(contractId, contractName) {
 // Signed PDF — load signed copy for signed contracts
 // =============================================================
 async function loadSignedPdf(contractId, documentId, filename) {
-    try {
-        const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/signed-copy`, {
-            headers: { Authorization: getIdToken() },
-        });
+    const MAX_ATTEMPTS = 20;   // try for up to ~2 minutes
+    const POLL_INTERVAL = 6000; // every 6 seconds
 
-        if (res.status === 404) {
-            // Still generating — fall back to original document rendering
-            // loadDocument was already called by loadAnalysis; nothing to do here
-            showToast("Signed copy is still being prepared. Showing original.", "info");
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+            const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/signed-copy`, {
+                headers: { Authorization: getIdToken() },
+            });
+
+            if (res.status === 404) {
+                if (attempt === 1) {
+                    showToast("Signed copy is being prepared. Will load automatically when ready.", "info");
+                }
+                // Wait and retry
+                await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+                continue;
+            }
+
+            if (!res.ok) throw new Error(`Error ${res.status}`);
+
+            const data = await res.json();
+            // Load the signed PDF via PDF.js
+            loadPdf(data.url);
+            return;
+
+        } catch (err) {
+            console.warn("Could not load signed PDF:", err.message);
             return;
         }
-
-        if (!res.ok) throw new Error(`Error ${res.status}`);
-
-        const data = await res.json();
-
-        // Load the signed PDF via PDF.js — replaces whatever was already rendered
-        loadPdf(data.url);
-
-    } catch (err) {
-        // Non-fatal — original document is already shown
-        console.warn("Could not load signed PDF:", err.message);
     }
+
+    // Exhausted retries — original document already showing, nothing more to do
+    console.warn("Signed copy not ready after max attempts, showing original.");
 }
 
 // =============================================================
