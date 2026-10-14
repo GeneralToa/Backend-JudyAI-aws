@@ -55,7 +55,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // --- Render header actions + action bar ---
-    renderActions(contractId, contractName, contractStatus);
+    renderActions(contractId, contractName, contractStatus, documentId, decodeURIComponent(contractName));
 
     // --- Load analysis (fetches pageImages) + document in one shot ---
     // loadAnalysis extracts extraction.pageImages and calls loadDocument() itself
@@ -606,7 +606,7 @@ function updateNavButtons() {
 // =============================================================
 // Actions — header right + bottom bar based on contract status
 // =============================================================
-function renderActions(contractId, contractName, contractStatus) {
+function renderActions(contractId, contractName, contractStatus, documentId, filename) {
     const headerActions = document.getElementById("review-header-actions");
     const actionBar     = document.getElementById("review-action-bar");
 
