@@ -472,10 +472,13 @@ function onViewportScroll() {
 // =============================================================
 function loadPdf(url) {
     viewerMode = "pdf";
+    currentScale = 1.0;  // always reset zoom when loading a new PDF
 
-    const script = document.createElement("script");
-    script.src = PDFJS_CDN;
-    script.onload = () => {
+    // Hide BDA container if it was showing (e.g. switching from Word page images to signed PDF)
+    const bdaContainer = document.getElementById("review-bda-container");
+    if (bdaContainer) bdaContainer.style.display = "none";
+
+    function initPdf() {
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
 
         showPlaceholder("Loading document...", "");
@@ -503,7 +506,17 @@ function loadPdf(url) {
         }).catch(err => {
             showPlaceholder("Could not render PDF", err.message);
         });
-    };
+    }
+
+    // If PDF.js already loaded, use it directly — don't append script again
+    if (window.pdfjsLib) {
+        initPdf();
+        return;
+    }
+
+    const script = document.createElement("script");
+    script.src = PDFJS_CDN;
+    script.onload = initPdf;
     script.onerror = () => showPlaceholder("Could not load PDF viewer", "PDF.js failed to load.");
     document.head.appendChild(script);
 }
