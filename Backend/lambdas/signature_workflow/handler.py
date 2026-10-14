@@ -968,8 +968,8 @@ def _image_to_pdf_page(img):
     img.save(img_buf, format="JPEG", quality=92)
     img_buf.seek(0)
 
-    # BDA rasterises at 150 dpi — convert pixels → points (72 pt/inch)
-    DPI = 150
+    # BDA rasterises at 300 dpi (2550×3300 = letter at 300dpi) — convert pixels → points (72 pt/inch)
+    DPI = 300
     page_w_pt = img_w * 72 / DPI
     page_h_pt = img_h * 72 / DPI
 
