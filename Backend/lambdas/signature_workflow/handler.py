@@ -4,22 +4,32 @@ Handles the signature workflow engine for contract approval chains.
 Triggered by API Gateway with Lambda Proxy integration.
 
 Routes:
-    POST /contracts/{contractId}/route   — Apply default template, assign signers,
-                                           update contract status to routed_for_signature
-    GET  /contracts/{contractId}/signers — Get list of signers and their status
-    POST /contracts/{contractId}/sign    — Record a signer's signature. If all signers
-                                           done (sequential or parallel), insert
-                                           completed event and update status to signed.
+    POST /contracts/{contractId}/route          — Apply default template, assign signers,
+                                                  update contract status to routed_for_signature
+    GET  /contracts/{contractId}/signers         — Get list of signers and their status
+    POST /contracts/{contractId}/sign            — Record a signer's signature. If all signers
+                                                   done (sequential or parallel), insert
+                                                   completed event and update status to signed.
+    GET  /contracts/{contractId}/signed-copy     — Return presigned URL for signed PDF copy,
+                                                   or 404 if not yet generated.
+
+Async actions (invoked by other Lambdas, no routeKey):
+    action=notify_risk_flagged                   — Send email when high risks are flagged
+    action=generate_signed_copy                  — Build final signed PDF and upload to S3
 
 Aurora is accessed via the RDS Data API using the app_writer role.
 Cluster ARN and secret ARN are resolved from SSM at cold-start and cached.
 """
 
+import base64
+import io
 import json
 import os
 from datetime import datetime, timezone
 
 import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError
 
 # --- Clients ---
 rds_data_client = boto3.client("rds-data", region_name="us-west-2")
@@ -27,16 +37,28 @@ ssm_client = boto3.client("ssm", region_name="us-west-2")
 lambda_client = boto3.client("lambda", region_name="us-west-2")
 ses_client = boto3.client("sesv2", region_name="us-east-1")
 dynamodb_client = boto3.client("dynamodb", region_name="us-west-2")
+s3_client = boto3.client(
+    "s3",
+    region_name=os.environ.get("AWS_REGION", "us-west-2"),
+    endpoint_url=f"https://s3.{os.environ.get('AWS_REGION', 'us-west-2')}.amazonaws.com",
+    config=Config(signature_version="s3v4"),
+)
 
 # --- Config ---
 OBLIGATION_AGENT_FUNCTION_NAME = os.environ.get(
     "OBLIGATION_AGENT_FUNCTION_NAME",
     "rag-app-prod-agent-obligation-tracking",
 )
+SELF_FUNCTION_NAME = os.environ.get(
+    "SELF_FUNCTION_NAME",
+    "rag-app-prod-signature-workflow",
+)
+S3_BUCKET = os.environ.get("S3_BUCKET", "")
 SES_FROM_ADDRESS = os.environ.get("SES_FROM_ADDRESS", "noreply@judy.ai")
-SES_CONFIGURATION_SET = os.environ.get("SES_CONFIGURATION_SET", "")  # leave empty until config set exists in us-east-1
+SES_CONFIGURATION_SET = os.environ.get("SES_CONFIGURATION_SET", "")
 APP_URL = os.environ.get("APP_URL", "https://d8xv5mej9ouxr.cloudfront.net")
 DOCUMENTS_TABLE = os.environ.get("DOCUMENTS_TABLE", "rag-app-prod-documents")
+SIGNED_COPY_URL_TTL = int(os.environ.get("SIGNED_COPY_URL_TTL", "900"))  # 15 min
 
 # --- SSM parameter names ---
 _AURORA_CLUSTER_ARN = None
@@ -77,6 +99,29 @@ def execute_sql(sql, parameters=None):
     return rds_data_client.execute_statement(**kwargs)
 
 
+def execute_sql_json(sql, parameters=None):
+    """Execute a SQL statement and return rows as list of dicts (formatRecordsAs=JSON)."""
+    _get_ssm_params()
+    kwargs = {
+        "resourceArn": _AURORA_CLUSTER_ARN,
+        "secretArn": _APP_WRITER_SECRET_ARN,
+        "database": AURORA_DATABASE,
+        "sql": sql,
+        "formatRecordsAs": "JSON",
+    }
+    if parameters:
+        kwargs["parameters"] = parameters
+    result = rds_data_client.execute_statement(**kwargs)
+    return json.loads(result.get("formattedRecords") or "[]")
+
+
+def p(name, value):
+    """Build a typed parameter for RDS Data API (JSON mode)."""
+    if value is None:
+        return {"name": name, "value": {"isNull": True}}
+    return {"name": name, "value": {"stringValue": str(value)}}
+
+
 def get_uploader_email(contract_id):
     """
     Look up the uploader's email from DynamoDB using the contract_id.
@@ -104,6 +149,25 @@ def get_uploader_email(contract_id):
     return None
 
 
+def _resolve_s3_bucket(contract_id):
+    """
+    Resolve the S3 bucket name. Prefers the S3_BUCKET env var (set by Terraform).
+    Falls back to looking up the contract's s3_bucket column in Aurora.
+    """
+    if S3_BUCKET:
+        return S3_BUCKET
+    try:
+        rows = execute_sql_json(
+            "SELECT s3_bucket FROM app.contracts WHERE id = :id::uuid",
+            [p("id", contract_id)],
+        )
+        if rows:
+            return rows[0].get("s3_bucket", "")
+    except Exception as e:
+        print(f"Warning: could not resolve S3 bucket for contract {contract_id}: {e}")
+    return ""
+
+
 def lambda_handler(event, context):
     """Route event to appropriate handler based on HTTP method and path."""
     route_key = event.get("routeKey", "")
@@ -122,6 +186,8 @@ def lambda_handler(event, context):
             return handle_get_signers(contract_id)
         elif route_key == "POST /contracts/{contractId}/sign":
             return handle_sign(contract_id, user_email, event)
+        elif route_key == "GET /contracts/{contractId}/signed-copy":
+            return handle_get_signed_copy(contract_id)
         elif route_key == "POST /contracts/{contractId}/cancel-routing":
             return handle_cancel_routing(contract_id, user_email)
         else:
@@ -130,6 +196,8 @@ def lambda_handler(event, context):
             action = body.get("action")
             if action == "notify_risk_flagged":
                 return handle_notify_risk_flagged(body)
+            elif action == "generate_signed_copy":
+                return handle_generate_signed_copy(body)
             return response(400, {"error": f"Unsupported route: {route_key}"})
     except Exception as e:
         print(f"Error handling {route_key}: {e}")
@@ -295,8 +363,10 @@ def handle_sign(contract_id, user_email, event):
 
     body = json.loads(event.get("body") or "{}")
     signature_data = body.get("signatureData")  # base64 PNG
-    field_id = body.get("fieldId")              # optional, from Zuhair's template-prepopulation
+    field_id = body.get("fieldId")              # optional, from template-prepopulation
     page = body.get("page")                     # optional
+    full_name = body.get("fullName", "").strip() or None
+    title = body.get("title", "").strip() or None
 
     if not signature_data:
         return response(400, {"error": "signatureData is required"})
@@ -362,16 +432,19 @@ def handle_sign(contract_id, user_email, event):
         if earlier_pending["records"][0][0]["longValue"] > 0:
             return response(403, {"error": "It is not your turn to sign. Earlier signers have not signed yet."})
 
-    # Save the signature
+    # Save the signature with full_name and title
     execute_sql(
         """
-        INSERT INTO app.signer_signatures (contract_id, signer_id, signature_data, field_id, page)
-        VALUES (
+        INSERT INTO app.signer_signatures (
+            contract_id, signer_id, signature_data, field_id, page, full_name, title
+        ) VALUES (
             :contract_id::uuid,
             :signer_id::uuid,
             :signature_data,
             :field_id::uuid,
-            :page
+            :page,
+            :full_name,
+            :title
         )
         """,
         [
@@ -379,7 +452,9 @@ def handle_sign(contract_id, user_email, event):
             {"name": "signer_id",      "value": {"stringValue": signer_id}},
             {"name": "signature_data", "value": {"stringValue": signature_data}},
             {"name": "field_id",       "value": {"stringValue": field_id} if field_id else {"isNull": True}},
-            {"name": "page",           "value": {"longValue": page} if page else {"isNull": True}},
+            {"name": "page",           "value": {"longValue": page} if page is not None else {"isNull": True}},
+            {"name": "full_name",      "value": {"stringValue": full_name} if full_name else {"isNull": True}},
+            {"name": "title",          "value": {"stringValue": title} if title else {"isNull": True}},
         ]
     )
 
@@ -464,7 +539,7 @@ def handle_sign(contract_id, user_email, event):
         except Exception as e:
             print(f"Warning: failed to send completion notification for contract {contract_id}: {e}")
 
-        # Fire obligation agent async — fire and forget, must not fail the sign response
+        # Fire obligation agent async — fire and forget
         try:
             lambda_client.invoke(
                 FunctionName=OBLIGATION_AGENT_FUNCTION_NAME,
@@ -478,6 +553,20 @@ def handle_sign(contract_id, user_email, event):
         except Exception as e:
             print(f"Warning: failed to invoke obligation agent for contract {contract_id}: {e}")
 
+        # Trigger async PDF generation — fire and forget, must not fail the sign response
+        try:
+            lambda_client.invoke(
+                FunctionName=SELF_FUNCTION_NAME,
+                InvocationType="Event",
+                Payload=json.dumps({
+                    "action": "generate_signed_copy",
+                    "contract_id": contract_id,
+                }),
+            )
+            print(f"PDF generation triggered for contract {contract_id}")
+        except Exception as e:
+            print(f"Warning: failed to trigger PDF generation for contract {contract_id}: {e}")
+
         return response(200, {
             "contractId": contract_id,
             "status": "signed",
@@ -490,6 +579,518 @@ def handle_sign(contract_id, user_email, event):
         "message": "Signature recorded. Waiting for remaining signers.",
         "pendingSigners": pending_count,
     })
+
+
+# =============================================================
+# GET /contracts/{contractId}/signed-copy
+# Return a presigned URL for the signed PDF, or 404 if not ready.
+# =============================================================
+def handle_get_signed_copy(contract_id):
+    """Return presigned URL for the signed PDF copy."""
+    if not contract_id:
+        return response(400, {"error": "contractId is required"})
+
+    bucket = _resolve_s3_bucket(contract_id)
+    if not bucket:
+        return response(503, {"error": "Storage bucket not configured"})
+
+    key = f"signed/{contract_id}.pdf"
+
+    try:
+        s3_client.head_object(Bucket=bucket, Key=key)
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code in ("404", "NoSuchKey"):
+            return response(404, {"error": "Signed copy not yet available"})
+        print(f"Error checking signed copy for {contract_id}: {e}")
+        return response(503, {"error": "Could not check signed copy availability"})
+
+    try:
+        url = s3_client.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": bucket,
+                "Key": key,
+                "ResponseContentType": "application/pdf",
+                "ResponseContentDisposition": f'inline; filename="signed-{contract_id}.pdf"',
+            },
+            ExpiresIn=SIGNED_COPY_URL_TTL,
+        )
+        return response(200, {"url": url, "contractId": contract_id})
+    except Exception as e:
+        print(f"Error generating presigned URL for {contract_id}: {e}")
+        return response(500, {"error": "Could not generate download link"})
+
+
+# =============================================================
+# Async action: generate_signed_copy
+# Invoked by handle_sign after the last signer. Builds the final
+# signed PDF by stamping all signer data onto the page images and
+# appending an audit trail page.
+# =============================================================
+def handle_generate_signed_copy(payload):
+    """Build and upload the final signed PDF for a contract."""
+    contract_id = payload.get("contract_id")
+    if not contract_id:
+        print("generate_signed_copy: missing contract_id")
+        return {"statusCode": 400}
+
+    print(f"generate_signed_copy: starting for contract {contract_id}")
+
+    try:
+        generate_signed_copy(contract_id)
+        print(f"generate_signed_copy: completed for contract {contract_id}")
+        return {"statusCode": 200}
+    except Exception as e:
+        # Failure is non-fatal — contract stays signed, Download serves original
+        print(f"generate_signed_copy: FAILED for contract {contract_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"statusCode": 500, "error": str(e)}
+
+
+def generate_signed_copy(contract_id):
+    """
+    Core PDF generation logic.
+
+    Steps:
+    1. Fetch all signers + their signatures/name/title/signed_at
+    2. Fetch field positions from template_prepopulation agent
+    3. Fetch page images (JPEG) from S3
+    4. For each page: open image with Pillow, stamp matching signer data at field coords
+    5. Append audit trail page (built with reportlab)
+    6. Combine all pages into a single PDF with pypdf
+    7. Upload to signed/{contract_id}.pdf in S3
+    """
+    # --- lazy imports (only available in signature_workflow Lambda layer) ---
+    from PIL import Image, ImageDraw, ImageFont
+    from pypdf import PdfWriter, PdfReader
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+
+    bucket = _resolve_s3_bucket(contract_id)
+    if not bucket:
+        raise RuntimeError("S3 bucket not configured")
+
+    # ------------------------------------------------------------------ #
+    # 1. Fetch signers + their signature data, full_name, title, signed_at #
+    # ------------------------------------------------------------------ #
+    signers_rows = execute_sql_json(
+        """
+        SELECT
+            cs.id::text           AS signer_id,
+            cs.signer_email       AS email,
+            cs.signer_role        AS role,
+            cs.signer_order       AS signer_order,
+            cs.signed_at::text    AS signed_at,
+            ss.signature_data,
+            ss.full_name,
+            ss.title
+        FROM app.contract_signers cs
+        LEFT JOIN app.signer_signatures ss ON ss.signer_id = cs.id
+        WHERE cs.contract_id = :cid::uuid
+        ORDER BY cs.signer_order ASC
+        """,
+        [p("cid", contract_id)],
+    )
+
+    if not signers_rows:
+        raise RuntimeError("No signers found for contract")
+
+    # ------------------------------------------------------------------ #
+    # 2. Fetch field positions (template_prepopulation)                   #
+    # ------------------------------------------------------------------ #
+    fields_rows = execute_sql_json(
+        """
+        SELECT
+            cf.id::text     AS field_id,
+            cf.field_type,
+            cf.label,
+            cf.signer_role,
+            cf.page,
+            cf.position
+        FROM judy_ai.contract_fields cf
+        JOIN judy_ai.v_latest_agent_runs r
+          ON r.run_id = cf.run_id
+        WHERE r.contract_id = :cid::uuid
+          AND r.agent_type   = 'template_prepopulation'
+        ORDER BY cf.page NULLS LAST,
+                 (cf.position->>'y')::float NULLS LAST,
+                 (cf.position->>'x')::float
+        """,
+        [p("cid", contract_id)],
+    )
+
+    # Parse position JSON strings
+    for row in fields_rows:
+        pos = row.get("position")
+        if isinstance(pos, str):
+            try:
+                row["position"] = json.loads(pos)
+            except Exception:
+                row["position"] = None
+
+    # ------------------------------------------------------------------ #
+    # 3. Fetch page images (JPEG) from S3                                 #
+    # ------------------------------------------------------------------ #
+    extraction_rows = execute_sql_json(
+        """
+        SELECT raw_output_s3_key, page_count
+        FROM judy_ai.document_extractions
+        WHERE contract_id = :cid::uuid
+          AND status = 'succeeded'
+        ORDER BY completed_at DESC
+        LIMIT 1
+        """,
+        [p("cid", contract_id)],
+    )
+
+    if not extraction_rows:
+        raise RuntimeError("No successful extraction found for contract")
+
+    extraction = extraction_rows[0]
+    raw_key = extraction.get("raw_output_s3_key", "")
+    page_count = int(extraction.get("page_count") or 0)
+
+    if not raw_key.endswith("/result.json") or page_count < 1:
+        raise RuntimeError(f"Unexpected raw_output_s3_key format or no pages: {raw_key}")
+
+    # Build prefix: replace result.json with assets/rectified_image_
+    prefix = raw_key[: -len("result.json")] + "assets/rectified_image_"
+
+    # ------------------------------------------------------------------ #
+    # 4. Build role → signer mapping                                      #
+    # Rules (from spec):                                                  #
+    #   company signer → matched to fields labeled "company"              #
+    #   supplier signer → matched to any other role label                 #
+    #   One signer per box (last in signing order per role wins)          #
+    #   Unlabeled boxes → filled in page order, last signer per role only #
+    # ------------------------------------------------------------------ #
+    # Skip field types that are NOT stamped
+    SKIP_FIELD_TYPES = {"initial", "company", "text"}
+
+    # Build role → last signer mapping (highest signer_order wins per role)
+    role_to_signer = {}
+    for signer in signers_rows:
+        role = (signer.get("role") or "").lower()
+        role_to_signer[role] = signer  # later rows overwrite earlier ones
+
+    def match_signer_for_field(field):
+        """Return the signer dict that should fill this field, or None."""
+        field_role = (field.get("signer_role") or field.get("label") or "").lower()
+
+        if not field_role:
+            # Unlabeled — return any signer (last one by default)
+            return signers_rows[-1] if signers_rows else None
+
+        # company field → company signer
+        if field_role == "company":
+            return role_to_signer.get("company")
+
+        # supplier / vendor / advisor / recipient / customer → non-company signer
+        for role, signer in role_to_signer.items():
+            if role != "company":
+                return signer
+
+        return None
+
+    # ------------------------------------------------------------------ #
+    # 5. Stamp each page                                                  #
+    # ------------------------------------------------------------------ #
+    pdf_writer = PdfWriter()
+
+    for page_idx in range(page_count):
+        page_num = page_idx + 1  # 1-indexed (matches field.page)
+
+        # Download page JPEG from S3
+        page_key = f"{prefix}{page_idx}.png"  # key name has .png extension (actually JPEG)
+        try:
+            obj = s3_client.get_object(Bucket=bucket, Key=page_key)
+            img_bytes = obj["Body"].read()
+        except ClientError as e:
+            print(f"Warning: could not fetch page {page_num} ({page_key}): {e}")
+            # Create a blank white page instead of failing
+            img = Image.new("RGB", (1700, 2200), color=(255, 255, 255))
+        else:
+            img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+
+        img_w, img_h = img.size
+
+        # Fields on this page (skipping ignored types)
+        page_fields = [
+            f for f in fields_rows
+            if f.get("page") == page_num
+            and f.get("field_type") not in SKIP_FIELD_TYPES
+            and f.get("position")
+        ]
+
+        draw = ImageDraw.Draw(img)
+
+        for field in page_fields:
+            signer = match_signer_for_field(field)
+            if not signer:
+                continue
+
+            pos = field["position"]
+            # Normalized 0-1 coordinates, top-left origin
+            x = float(pos.get("x", 0))
+            y = float(pos.get("y", 0))
+            w = float(pos.get("width", 0.1))
+            h = float(pos.get("height", 0.05))
+
+            # Convert to pixel coordinates
+            px = int(x * img_w)
+            py = int(y * img_h)
+            pw = int(w * img_w)
+            ph = int(h * img_h)
+
+            field_type = field.get("field_type", "")
+
+            if field_type == "signature":
+                sig_data = signer.get("signature_data")
+                if sig_data:
+                    _stamp_signature(draw, img, sig_data, px, py, pw, ph)
+
+            elif field_type == "full_name":
+                name = signer.get("full_name") or signer.get("email", "")
+                _stamp_text(draw, name, px, py, pw, ph, img_w, img_h)
+
+            elif field_type == "title":
+                title_val = signer.get("title") or ""
+                _stamp_text(draw, title_val, px, py, pw, ph, img_w, img_h)
+
+            elif field_type == "date":
+                signed_at = signer.get("signed_at") or ""
+                date_str = signed_at[:10] if signed_at else datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                _stamp_text(draw, date_str, px, py, pw, ph, img_w, img_h)
+
+        # Convert stamped image to PDF page using reportlab
+        page_pdf_bytes = _image_to_pdf_page(img)
+
+        # Add to writer
+        page_reader = PdfReader(io.BytesIO(page_pdf_bytes))
+        pdf_writer.add_page(page_reader.pages[0])
+
+    # ------------------------------------------------------------------ #
+    # 6. Append audit trail page                                          #
+    # ------------------------------------------------------------------ #
+    audit_pdf_bytes = _build_audit_page(signers_rows, contract_id)
+    audit_reader = PdfReader(io.BytesIO(audit_pdf_bytes))
+    for audit_page in audit_reader.pages:
+        pdf_writer.add_page(audit_page)
+
+    # ------------------------------------------------------------------ #
+    # 7. Upload to S3                                                     #
+    # ------------------------------------------------------------------ #
+    out_buf = io.BytesIO()
+    pdf_writer.write(out_buf)
+    out_buf.seek(0)
+
+    signed_key = f"signed/{contract_id}.pdf"
+    s3_client.put_object(
+        Bucket=bucket,
+        Key=signed_key,
+        Body=out_buf.getvalue(),
+        ContentType="application/pdf",
+    )
+    print(f"Signed PDF uploaded to s3://{bucket}/{signed_key}")
+
+
+# ------------------------------------------------------------------ #
+# Helpers — image stamping                                             #
+# ------------------------------------------------------------------ #
+
+def _stamp_signature(draw, base_img, sig_data_b64, px, py, pw, ph):
+    """Decode a base64 PNG signature and paste it onto the image."""
+    from PIL import Image
+    try:
+        # Remove data URL prefix if present
+        if "," in sig_data_b64:
+            sig_data_b64 = sig_data_b64.split(",", 1)[1]
+        sig_bytes = base64.b64decode(sig_data_b64)
+        sig_img = Image.open(io.BytesIO(sig_bytes)).convert("RGBA")
+
+        # Resize to fit the field box, preserving aspect ratio
+        sig_img.thumbnail((pw, ph), Image.LANCZOS)
+
+        # Composite onto base image (handle transparency)
+        paste_x = px + (pw - sig_img.width) // 2
+        paste_y = py + (ph - sig_img.height) // 2
+        base_img.paste(sig_img, (paste_x, paste_y), sig_img)
+    except Exception as e:
+        print(f"Warning: could not stamp signature: {e}")
+
+
+def _stamp_text(draw, text, px, py, pw, ph, img_w, img_h):
+    """Draw text into a field box, auto-sizing the font."""
+    from PIL import ImageFont
+    if not text:
+        return
+    try:
+        # Font size proportional to field height; min 10px, max 40px
+        font_size = max(10, min(40, int(ph * 0.55)))
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
+        except Exception:
+            font = ImageFont.load_default()
+
+        # Center text vertically in field box
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_h = bbox[3] - bbox[1]
+        text_y = py + (ph - text_h) // 2
+
+        # Draw with a subtle white background for readability
+        draw.rectangle([px, py, px + pw, py + ph], fill=(255, 255, 255, 200))
+        draw.text((px + 4, text_y), text, fill=(20, 20, 40), font=font)
+    except Exception as e:
+        print(f"Warning: could not stamp text '{text}': {e}")
+
+
+def _image_to_pdf_page(img):
+    """Convert a PIL Image to a single-page PDF bytes using reportlab."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Image as RLImage
+    from reportlab.lib.units import inch
+
+    img_w, img_h = img.size
+    # Convert PIL image to bytes for reportlab
+    img_buf = io.BytesIO()
+    img.save(img_buf, format="JPEG", quality=92)
+    img_buf.seek(0)
+
+    # Page size in points (72 pt/inch). Scale image to fit letter-width while
+    # preserving aspect ratio. We use the image's native aspect ratio.
+    page_w_pt = img_w * 72 / 96  # assume 96 dpi for rasterised images
+    page_h_pt = img_h * 72 / 96
+
+    out_buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        out_buf,
+        pagesize=(page_w_pt, page_h_pt),
+        leftMargin=0, rightMargin=0, topMargin=0, bottomMargin=0,
+    )
+
+    rl_img = RLImage(img_buf, width=page_w_pt, height=page_h_pt)
+    doc.build([rl_img])
+    return out_buf.getvalue()
+
+
+def _build_audit_page(signers_rows, contract_id):
+    """Build a PDF audit trail page listing all signers."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+
+    out_buf = io.BytesIO()
+    doc = SimpleDocTemplate(out_buf, pagesize=letter,
+                            leftMargin=0.75 * inch, rightMargin=0.75 * inch,
+                            topMargin=0.75 * inch, bottomMargin=0.75 * inch)
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "AuditTitle",
+        parent=styles["Heading1"],
+        fontSize=18,
+        spaceAfter=6,
+        textColor=colors.HexColor("#1a1a2e"),
+    )
+    sub_style = ParagraphStyle(
+        "AuditSub",
+        parent=styles["Normal"],
+        fontSize=9,
+        textColor=colors.HexColor("#666666"),
+        spaceAfter=18,
+    )
+    cell_style = ParagraphStyle(
+        "AuditCell",
+        parent=styles["Normal"],
+        fontSize=9,
+        textColor=colors.HexColor("#1a1a2e"),
+    )
+
+    story = []
+    story.append(Paragraph("Signature Audit Trail", title_style))
+    story.append(Paragraph(
+        f"Contract ID: {contract_id} &nbsp;·&nbsp; "
+        f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
+        sub_style,
+    ))
+
+    # Table header
+    table_data = [["Signer", "Role", "Signed At", "Signature"]]
+
+    for signer in signers_rows:
+        email = signer.get("email", "")
+        role = signer.get("role", "")
+        signed_at = (signer.get("signed_at") or "")[:19].replace("T", " ")
+        full_name = signer.get("full_name") or ""
+        title_val = signer.get("title") or ""
+        sig_data = signer.get("signature_data") or ""
+
+        signer_cell = Paragraph(
+            f"<b>{email}</b><br/>"
+            + (f"Name: {full_name}<br/>" if full_name else "")
+            + (f"Title: {title_val}" if title_val else ""),
+            cell_style,
+        )
+
+        sig_cell = ""
+        if sig_data:
+            try:
+                if "," in sig_data:
+                    sig_data = sig_data.split(",", 1)[1]
+                sig_bytes = base64.b64decode(sig_data)
+                sig_buf = io.BytesIO(sig_bytes)
+                sig_img = RLImage(sig_buf, width=1.2 * inch, height=0.4 * inch)
+                sig_cell = sig_img
+            except Exception:
+                sig_cell = Paragraph("(signature)", cell_style)
+
+        table_data.append([
+            signer_cell,
+            Paragraph(role, cell_style),
+            Paragraph(signed_at or "—", cell_style),
+            sig_cell,
+        ])
+
+    col_widths = [2.5 * inch, 1.0 * inch, 1.5 * inch, 1.5 * inch]
+    t = Table(table_data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(TableStyle([
+        # Header row
+        ("BACKGROUND",   (0, 0), (-1, 0), colors.HexColor("#7c4dff")),
+        ("TEXTCOLOR",    (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",     (0, 0), (-1, 0), 10),
+        ("BOTTOMPADDING",(0, 0), (-1, 0), 8),
+        ("TOPPADDING",   (0, 0), (-1, 0), 8),
+        # Data rows
+        ("BACKGROUND",   (0, 1), (-1, -1), colors.white),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, colors.HexColor("#f9f9ff")]),
+        ("FONTNAME",     (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE",     (0, 1), (-1, -1), 9),
+        ("TOPPADDING",   (0, 1), (-1, -1), 6),
+        ("BOTTOMPADDING",(0, 1), (-1, -1), 6),
+        # Grid
+        ("GRID",         (0, 0), (-1, -1), 0.5, colors.HexColor("#e0e0e0")),
+        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+
+    story.append(t)
+    story.append(Spacer(1, 0.3 * inch))
+    story.append(Paragraph(
+        "This audit trail was automatically generated by Judy.ai and records the "
+        "digital signatures collected during the signing process.",
+        ParagraphStyle("Footer", parent=styles["Normal"], fontSize=8,
+                       textColor=colors.HexColor("#999999")),
+    ))
+
+    doc.build(story)
+    return out_buf.getvalue()
 
 
 def response(status_code, body):
@@ -522,7 +1123,6 @@ def send_email(to_address, subject, html_body):
                     },
                 }
             },
-            # ConfigurationSetName intentionally omitted — config set doesn't exist in us-east-1 yet
         )
         print(f"Email sent to {to_address}: {subject}")
     except Exception as e:
@@ -603,14 +1203,12 @@ def notify_all_signed(sender_email, contract_name, signers):
 # =============================================================
 # POST /contracts/{contractId}/cancel-routing
 # Reset a stuck routed_for_signature contract back to ready_for_review.
-# Deletes all signer rows and signature events for the contract.
 # =============================================================
 def handle_cancel_routing(contract_id, user_email):
     """Cancel routing for a contract — reset to ready_for_review."""
     if not contract_id:
         return response(400, {"error": "contractId is required"})
 
-    # Check contract exists and is in a routable state
     result = execute_sql(
         "SELECT id, status FROM app.contracts WHERE id = :id::uuid",
         [{"name": "id", "value": {"stringValue": contract_id}}]
@@ -622,19 +1220,14 @@ def handle_cancel_routing(contract_id, user_email):
     if current_status not in ("routed_for_signature",):
         return response(409, {"error": f"Contract cannot be cancelled from status: {current_status}. Only routed_for_signature contracts can be cancelled."})
 
-    # Delete signer rows
     execute_sql(
         "DELETE FROM app.contract_signers WHERE contract_id = :contract_id::uuid",
         [{"name": "contract_id", "value": {"stringValue": contract_id}}]
     )
-
-    # Delete signature events
     execute_sql(
         "DELETE FROM app.signature_events WHERE contract_id = :contract_id::uuid",
         [{"name": "contract_id", "value": {"stringValue": contract_id}}]
     )
-
-    # Reset contract status to ready_for_review
     execute_sql(
         "UPDATE app.contracts SET status = 'ready_for_review' WHERE id = :id::uuid",
         [{"name": "id", "value": {"stringValue": contract_id}}]
@@ -651,8 +1244,6 @@ def handle_cancel_routing(contract_id, user_email):
 
 # =============================================================
 # Async action: notify_risk_flagged
-# Invoked by agent-risk-clause when high-severity risks are found.
-# Payload: {"action": "notify_risk_flagged", "contract_id": "...", "high_count": n}
 # =============================================================
 def handle_notify_risk_flagged(payload):
     """Send email to contract uploader when high-severity risks are flagged."""
@@ -663,7 +1254,6 @@ def handle_notify_risk_flagged(payload):
         print("Warning: notify_risk_flagged called without contract_id")
         return {"statusCode": 400, "body": "contract_id required"}
 
-    # Get contract name and uploader email
     try:
         result = execute_sql(
             "SELECT original_filename FROM app.contracts WHERE id = :id::uuid",

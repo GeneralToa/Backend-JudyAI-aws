@@ -1419,9 +1419,18 @@ function escapeHtml(text) {
                 btn.addEventListener("click", () => confirmCancelRouting(btn.dataset.contractId, btn.dataset.filename));
             });
 
-            // Download original document
+            // Download — signed contracts use signed-copy endpoint, others use original
             list.querySelectorAll(".btn-download-doc").forEach(btn => {
-                btn.addEventListener("click", () => downloadOriginalDoc(btn.dataset.documentId, btn.dataset.filename));
+                btn.addEventListener("click", () => {
+                    const row = btn.closest(".file-row");
+                    const status = row ? row.dataset.status : "";
+                    const contractId = row ? row.dataset.contractId : "";
+                    if (status === "signed" && contractId) {
+                        downloadSignedCopy(contractId, btn.dataset.filename);
+                    } else {
+                        downloadOriginalDoc(btn.dataset.documentId, btn.dataset.filename);
+                    }
+                });
             });
 
             // Navigate to review page on filename click
@@ -2047,7 +2056,7 @@ ${obligations.length ? obligations.map(o => `
         });
 
         // =============================================================
-        // Signature Modal — Draw or Type
+        // Signature Modal — Draw or Type (kept for batch sign fallback)
         // =============================================================
         const signatureModal = document.getElementById("signature-modal");
         const signatureModalFilename = document.getElementById("signature-modal-filename");
@@ -2065,6 +2074,16 @@ ${obligations.length ? obligations.map(o => `
             selectedContractId = contractId;
             selectedContractName = filename;
             signatureModalFilename.textContent = filename;
+
+            // Auto-fill date, clear name/title
+            const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+            const dateEl  = document.getElementById("sig-date");
+            const nameEl  = document.getElementById("sig-full-name");
+            const titleEl = document.getElementById("sig-title");
+            if (dateEl)  dateEl.value  = today;
+            if (nameEl)  nameEl.value  = "";
+            if (titleEl) titleEl.value = "";
+
             clearDrawCanvas();
             clearTypeCanvas();
             signatureModal.classList.remove("hidden");
@@ -2168,13 +2187,16 @@ ${obligations.length ? obligations.map(o => `
                 await executeBatchSign(signatureData);
             } else {
                 try {
+                    const fullName = (document.getElementById("sig-full-name")?.value || "").trim();
+                    const title    = (document.getElementById("sig-title")?.value    || "").trim();
+
                     const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${selectedContractId}/sign`, {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
                             Authorization: getIdToken(),
                         },
-                        body: JSON.stringify({ signatureData }),
+                        body: JSON.stringify({ signatureData, fullName, title }),
                     });
 
                     if (!res.ok) throw new Error("Failed to sign contract");
@@ -2283,6 +2305,41 @@ ${obligations.length ? obligations.map(o => `
                 const a = document.createElement("a");
                 a.href = data.download_url;
                 a.download = filename;
+                a.target = "_blank";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } catch (err) {
+                showToast(`Download failed: ${err.message}`, "error");
+            }
+        }
+
+        // =============================================================
+        // Download Signed Copy
+        // =============================================================
+        async function downloadSignedCopy(contractId, filename) {
+            try {
+                const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/signed-copy`, {
+                    headers: { Authorization: getIdToken() },
+                });
+
+                if (res.status === 404) {
+                    // PDF still generating — fall back to original via document ID
+                    showToast("Signed copy is still being prepared. Downloading original.", "info");
+                    // Find the documentId from the row
+                    const row = document.querySelector(`.file-row[data-contract-id="${contractId}"]`);
+                    const btn = row ? row.querySelector(".btn-download-doc") : null;
+                    const docId = btn ? btn.dataset.documentId : null;
+                    if (docId) downloadOriginalDoc(docId, filename);
+                    return;
+                }
+
+                if (!res.ok) throw new Error("Failed to get signed copy link");
+
+                const data = await res.json();
+                const a = document.createElement("a");
+                a.href = data.url;
+                a.download = `signed-${filename.replace(/\.[^.]+$/, "")}.pdf`;
                 a.target = "_blank";
                 document.body.appendChild(a);
                 a.click();

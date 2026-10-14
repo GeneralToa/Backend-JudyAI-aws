@@ -175,6 +175,9 @@ resource "aws_lambda_function" "lambda" {
     content {
       variables = {
         OBLIGATION_AGENT_FUNCTION_NAME = "${local.identifier}-${local.config.lambda.agentObligationTracking.functionName}"
+        SELF_FUNCTION_NAME             = "${local.identifier}-${local.config.lambda.signatureWorkflow.functionName}"
+        S3_BUCKET                      = try(local.config.s3.bucketNamespace, "") == "account-regional" ? "${local.identifier}-${local.config.s3.name}-${data.aws_caller_identity.caller_identity.account_id}-${local.config.region}-an" : "${local.identifier}-${local.config.s3.name}"
+        DOCUMENTS_TABLE                = "${local.identifier}-${local.config.dynamoDB.tableName}"
         SES_FROM_ADDRESS               = "noreply@judy.ai"
         SES_CONFIGURATION_SET          = ""
         APP_URL                        = "https://d8xv5mej9ouxr.cloudfront.net"

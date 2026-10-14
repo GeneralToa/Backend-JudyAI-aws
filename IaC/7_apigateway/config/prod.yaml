@@ -121,6 +121,13 @@ apiGateway:
         integrationMethod: "POST"
         authRequired: true
         timeoutMilliseconds: 29000
+      contractsSignedCopyGet:
+        functionName: "signature-workflow"
+        path: "/contracts/{contractId}/signed-copy"
+        method: "GET"
+        integrationMethod: "GET"
+        authRequired: true
+        timeoutMilliseconds: 29000
       adminTemplatesGet:
         functionName: "admin-api"
         path: "/admin/templates"
