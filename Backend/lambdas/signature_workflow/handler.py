@@ -932,25 +932,27 @@ def _stamp_signature(draw, base_img, sig_data_b64, px, py, pw, ph):
 
 
 def _stamp_text(draw, text, px, py, pw, ph, img_w, img_h):
-    """Draw text into a field area, positioned just above the line."""
+    """Draw text onto the image at the field position using a bundled font."""
     from PIL import ImageFont
+    import os
     if not text:
         return
     try:
-        # Use a generous font size — 60% of field height, min 28px, max 80px
-        font_size = max(28, min(80, int(ph * 0.6)))
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
-        except Exception:
-            font = ImageFont.load_default()
+        # Font size: field height * 0.7, min 28px, max 100px
+        # ph is in image pixels (300dpi) — these are real pixel sizes
+        font_size = max(28, min(100, int(ph * 0.7)))
 
-        # Position text just above the bottom of the field area (on the line)
+        # Use bundled font.ttf (copied alongside handler.py in the Lambda package)
+        font_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "font.ttf")
+        font = ImageFont.truetype(font_path, font_size)
+
+        # Place text just above the line — bottom of text aligns with py + ph
         bbox = draw.textbbox((0, 0), text, font=font)
         text_h = bbox[3] - bbox[1]
-        # Align text to sit ON the line — bottom of text at py + ph
-        text_y = py + ph - text_h - 4
+        text_y = py + ph - text_h
 
-        draw.text((px + 4, text_y), text, fill=(20, 20, 40), font=font)
+        draw.text((px, text_y), text, fill=(20, 20, 40), font=font)
+        print(f"Stamped text '{text}' at ({px},{text_y}) font_size={font_size} ph={ph}")
     except Exception as e:
         print(f"Warning: could not stamp text '{text}': {e}")
 
