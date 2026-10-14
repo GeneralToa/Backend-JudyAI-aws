@@ -848,9 +848,9 @@ def generate_signed_copy(contract_id):
             py = int(y * img_h)
             ph = int(h * img_h)
 
-            # Stamp starts at 44% across to 93%
-            stamp_x = int(0.44 * img_w)
-            stamp_w = int(0.49 * img_w)  # 44% to 93%
+            # Stamp starts at 55% across to 93%
+            stamp_x = int(0.55 * img_w)
+            stamp_w = int(0.38 * img_w)  # 55% to 93%
 
             field_type = field.get("field_type", "")
 
@@ -924,9 +924,9 @@ def _stamp_signature(draw, base_img, sig_data_b64, px, py, pw, ph):
         target_h = ph * 2
         sig_img.thumbnail((target_w, target_h), Image.LANCZOS)
 
-        # Position: horizontally start at px, vertically centered in field
+        # Position: start at stamp_x, sit ABOVE the line (shift up by 1.5x field height)
         paste_x = px
-        paste_y = py + (ph - sig_img.height) // 2
+        paste_y = max(0, py - sig_img.height)
         base_img.paste(sig_img, (paste_x, paste_y), sig_img)
     except Exception as e:
         print(f"Warning: could not stamp signature: {e}")
