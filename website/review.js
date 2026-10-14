@@ -472,9 +472,9 @@ function onViewportScroll() {
 // =============================================================
 function loadPdf(url) {
     viewerMode = "pdf";
-    currentScale = 1.0;  // always reset zoom when loading a new PDF
+    currentScale = 1.0;  // reset so auto-fit recalculates for this PDF
 
-    // Hide BDA container if it was showing (e.g. switching from Word page images to signed PDF)
+    // Hide BDA container if it was showing
     const bdaContainer = document.getElementById("review-bda-container");
     if (bdaContainer) bdaContainer.style.display = "none";
 
@@ -525,21 +525,29 @@ function renderPdfPage(pageNum) {
     if (!pdfDoc) return;
 
     pdfDoc.getPage(pageNum).then(page => {
-        const canvas = document.getElementById("review-pdf-canvas");
-        const ctx    = canvas.getContext("2d");
+        const canvas   = document.getElementById("review-pdf-canvas");
+        const viewport = document.getElementById("review-doc-viewport");
+        const ctx      = canvas.getContext("2d");
 
-        const viewport = page.getViewport({ scale: currentScale });
-        canvas.width  = viewport.width;
-        canvas.height = viewport.height;
+        // Auto-fit to viewport width on first render (scale = 1.0)
+        // This prevents the PDF rendering at full resolution and overflowing.
+        if (currentScale === 1.0) {
+            const availableWidth = (viewport.clientWidth || 800) - 48; // 24px padding each side
+            const naturalWidth   = page.getViewport({ scale: 1.0 }).width;
+            if (naturalWidth > availableWidth) {
+                currentScale = availableWidth / naturalWidth;
+            }
+        }
 
-        page.render({ canvasContext: ctx, viewport }).promise.then(() => {
+        const pdfViewport = page.getViewport({ scale: currentScale });
+        canvas.width  = pdfViewport.width;
+        canvas.height = pdfViewport.height;
+
+        page.render({ canvasContext: ctx, viewport: pdfViewport }).promise.then(() => {
             currentPage = pageNum;
             updatePageIndicator();
             updateZoomLabel();
-
-            // Draw field overlays for signer mode
             drawPdfFieldOverlays(ctx, canvas, pageNum);
-
             updateNavButtons();
         });
     });
