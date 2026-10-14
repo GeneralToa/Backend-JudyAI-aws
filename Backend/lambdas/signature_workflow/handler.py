@@ -952,6 +952,7 @@ def _stamp_text(draw, text, px, py, pw, ph, img_w, img_h):
 def _image_to_pdf_page(img):
     """Convert a PIL Image to a single-page PDF bytes using reportlab canvas directly.
     Uses low-level canvas (not SimpleDocTemplate) to avoid margin/frame constraints.
+    BDA rasterises at 150 dpi — use that for pt conversion so field overlays align.
     """
     from reportlab.pdfgen import canvas as rl_canvas
     from reportlab.lib.utils import ImageReader
@@ -963,10 +964,10 @@ def _image_to_pdf_page(img):
     img.save(img_buf, format="JPEG", quality=92)
     img_buf.seek(0)
 
-    # Page size in points — BDA rasterises at 150 dpi typically,
-    # but we use 96 dpi as a safe default for coordinate consistency.
-    page_w_pt = img_w * 72 / 96
-    page_h_pt = img_h * 72 / 96
+    # BDA rasterises at 150 dpi — convert pixels → points (72 pt/inch)
+    DPI = 150
+    page_w_pt = img_w * 72 / DPI
+    page_h_pt = img_h * 72 / DPI
 
     out_buf = io.BytesIO()
     c = rl_canvas.Canvas(out_buf, pagesize=(page_w_pt, page_h_pt))
