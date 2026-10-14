@@ -845,7 +845,11 @@ def generate_signed_copy(contract_id):
             px = int(x * img_w)
             py = int(y * img_h)
             pw = int(w * img_w)
-            ph = int(h * img_h)
+            ph = max(int(h * img_h), int(0.04 * img_h))  # min 4% of page height
+
+            # Clamp to page bounds — never overflow right edge
+            if px + pw > img_w:
+                pw = img_w - px
 
             field_type = field.get("field_type", "")
 
@@ -913,14 +917,14 @@ def _stamp_signature(draw, base_img, sig_data_b64, px, py, pw, ph):
         sig_bytes = base64.b64decode(sig_data_b64)
         sig_img = Image.open(io.BytesIO(sig_bytes)).convert("RGBA")
 
-        # Scale up: give the signature 2x the field height so it's clearly visible,
-        # but cap at the field width to avoid overflowing horizontally
-        target_h = ph * 2
+        # Target size: fill the field width, height = 2x field height
+        # This makes signatures clearly visible
         target_w = pw
+        target_h = ph * 2
         sig_img.thumbnail((target_w, target_h), Image.LANCZOS)
 
-        # Center horizontally in box, align vertically to center
-        paste_x = px + (pw - sig_img.width) // 2
+        # Position: horizontally start at px, vertically centered in field
+        paste_x = px
         paste_y = py + (ph - sig_img.height) // 2
         base_img.paste(sig_img, (paste_x, paste_y), sig_img)
     except Exception as e:
@@ -928,25 +932,23 @@ def _stamp_signature(draw, base_img, sig_data_b64, px, py, pw, ph):
 
 
 def _stamp_text(draw, text, px, py, pw, ph, img_w, img_h):
-    """Draw text into a field box, auto-sizing the font to fill it."""
+    """Draw text into a field area, positioned just above the line."""
     from PIL import ImageFont
     if not text:
         return
     try:
-        # Font size: fill ~80% of the field height, min 12px, max 60px
-        font_size = max(12, min(60, int(ph * 0.8)))
+        # Use a generous font size — 60% of field height, min 28px, max 80px
+        font_size = max(28, min(80, int(ph * 0.6)))
         try:
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
         except Exception:
             font = ImageFont.load_default()
 
-        # Draw with a subtle white background for readability
-        draw.rectangle([px, py, px + pw, py + ph], fill=(255, 255, 255, 200))
-
-        # Center text vertically in field box
+        # Position text just above the bottom of the field area (on the line)
         bbox = draw.textbbox((0, 0), text, font=font)
         text_h = bbox[3] - bbox[1]
-        text_y = py + (ph - text_h) // 2
+        # Align text to sit ON the line — bottom of text at py + ph
+        text_y = py + ph - text_h - 4
 
         draw.text((px + 4, text_y), text, fill=(20, 20, 40), font=font)
     except Exception as e:
