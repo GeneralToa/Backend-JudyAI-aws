@@ -911,11 +911,11 @@ function openRouteModal(contractId, contractName) {
 }
 
 // =============================================================
-// Signed PDF — load signed copy for signed contracts
+// Signed PDF — poll until ready then load cleanly
 // =============================================================
 async function loadSignedPdf(contractId, documentId, filename) {
-    const MAX_ATTEMPTS = 20;   // try for up to ~2 minutes
-    const POLL_INTERVAL = 6000; // every 6 seconds
+    const MAX_ATTEMPTS = 20;
+    const POLL_INTERVAL = 6000;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
@@ -927,7 +927,6 @@ async function loadSignedPdf(contractId, documentId, filename) {
                 if (attempt === 1) {
                     showToast("Signed copy is being prepared. Will load automatically when ready.", "info");
                 }
-                // Wait and retry
                 await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
                 continue;
             }
@@ -935,8 +934,31 @@ async function loadSignedPdf(contractId, documentId, filename) {
             if (!res.ok) throw new Error(`Error ${res.status}`);
 
             const data = await res.json();
-            // Load the signed PDF via PDF.js
+
+            // Clear BDA images completely before loading PDF
+            const bdaContainer = document.getElementById("review-bda-container");
+            if (bdaContainer) {
+                bdaContainer.innerHTML = "";
+                bdaContainer.style.display = "none";
+            }
+
+            // Clear any BDA refresh timer
+            if (typeof _bdaRefreshTimer !== "undefined" && _bdaRefreshTimer) {
+                clearInterval(_bdaRefreshTimer);
+            }
+
+            // Reset viewer state
+            currentScale = 1.0;
+            viewerMode = "pdf";
+
+            // Show the PDF canvas, hide placeholder
+            document.getElementById("review-doc-placeholder").classList.add("hidden");
+            const canvas = document.getElementById("review-pdf-canvas");
+            canvas.classList.remove("hidden");
+
+            // Load PDF
             loadPdf(data.url);
+            showToast("Signed copy loaded.", "success");
             return;
 
         } catch (err) {
@@ -945,8 +967,7 @@ async function loadSignedPdf(contractId, documentId, filename) {
         }
     }
 
-    // Exhausted retries — original document already showing, nothing more to do
-    console.warn("Signed copy not ready after max attempts, showing original.");
+    console.warn("Signed copy not ready after max attempts.");
 }
 
 // =============================================================

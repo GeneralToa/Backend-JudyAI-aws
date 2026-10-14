@@ -227,6 +227,7 @@
     border-radius: 2px;
     display: block;
     margin: 0 auto;
+    max-width: 100%;
 }
 
 /* DOCX iframe (kept for future use; BDA images are used instead) */
