@@ -844,14 +844,13 @@ def generate_signed_copy(contract_id):
             # Convert to pixel coordinates
             # Y position from AI is accurate — use it directly
             # X position from AI starts AFTER the label text, which is too far right.
-            # Instead, stamp from the left edge of the signing area to right edge.
-            # The signing area on standard documents starts at ~15% and ends at ~93%.
+            # Stamp from center-left of the signing area to right edge.
             py = int(y * img_h)
             ph = int(h * img_h)
 
-            # Stamp spans the full signing column width
-            stamp_x = int(0.15 * img_w)
-            stamp_w = int(0.78 * img_w)  # 15% to 93%
+            # Stamp starts at 35% across (center of signing column) to 93%
+            stamp_x = int(0.35 * img_w)
+            stamp_w = int(0.58 * img_w)  # 35% to 93%
 
             field_type = field.get("field_type", "")
 
@@ -955,10 +954,10 @@ def _stamp_text(draw, text, px, py, pw, ph, img_w, img_h):
             font_size -= 2
             font = ImageFont.truetype(font_path, font_size)
 
-        # Place text: bottom of text aligns with bottom of field (sits on the line)
+        # Place text slightly above the line
         bbox = draw.textbbox((0, 0), text, font=font)
         text_h = bbox[3] - bbox[1]
-        text_y = py + ph - text_h
+        text_y = py - text_h - 4  # just above the field top
 
         draw.text((px, text_y), text, fill=(20, 20, 40), font=font)
         print(f"Stamped text '{text}' at ({px},{text_y}) font_size={font_size} ph={ph} pw={pw}")
