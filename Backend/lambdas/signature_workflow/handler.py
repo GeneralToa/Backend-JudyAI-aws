@@ -918,15 +918,16 @@ def _stamp_signature(draw, base_img, sig_data_b64, px, py, pw, ph):
         sig_bytes = base64.b64decode(sig_data_b64)
         sig_img = Image.open(io.BytesIO(sig_bytes)).convert("RGBA")
 
-        # Target size: field width, height = 1.5x field height (not 2x — avoid overlap)
+        # Target size: field width, height = exactly field height (no overflow)
         target_w = pw
-        target_h = int(ph * 1.5)
+        target_h = ph
         sig_img.thumbnail((target_w, target_h), Image.LANCZOS)
 
-        # Position: sit above the line within the field area
+        # Position: centered vertically within the field
         paste_x = px
-        paste_y = max(0, py - sig_img.height + ph)
+        paste_y = py + (ph - sig_img.height) // 2
         base_img.paste(sig_img, (paste_x, paste_y), sig_img)
+        print(f"Stamped signature at ({paste_x},{paste_y}) size=({sig_img.width},{sig_img.height}) ph={ph}")
     except Exception as e:
         print(f"Warning: could not stamp signature: {e}")
 
