@@ -841,11 +841,11 @@ def generate_signed_copy(contract_id):
             w = float(pos.get("width", 0.1))
             h = float(pos.get("height", 0.05))
 
-            # Convert to pixel coordinates
+            # Convert to pixel coordinates — use exact AI dimensions
             px = int(x * img_w)
             py = int(y * img_h)
             pw = int(w * img_w)
-            ph = max(int(h * img_h), int(0.04 * img_h))  # min 4% of page height
+            ph = int(h * img_h)
 
             # Clamp to page bounds — never overflow right edge
             if px + pw > img_w:
@@ -938,21 +938,28 @@ def _stamp_text(draw, text, px, py, pw, ph, img_w, img_h):
     if not text:
         return
     try:
-        # Font size: field height * 0.7, min 28px, max 100px
-        # ph is in image pixels (300dpi) — these are real pixel sizes
-        font_size = max(28, min(100, int(ph * 0.7)))
-
-        # Use bundled font.ttf (copied alongside handler.py in the Lambda package)
         font_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "font.ttf")
+
+        # Start at ph * 0.7, shrink until text fits within pw
+        font_size = max(12, int(ph * 0.7))
         font = ImageFont.truetype(font_path, font_size)
 
-        # Place text just above the line — bottom of text aligns with py + ph
+        # Shrink font until text fits within available width
+        while font_size > 12:
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_w = bbox[2] - bbox[0]
+            if text_w <= pw:
+                break
+            font_size -= 2
+            font = ImageFont.truetype(font_path, font_size)
+
+        # Place text: bottom of text aligns with bottom of field (sits on the line)
         bbox = draw.textbbox((0, 0), text, font=font)
         text_h = bbox[3] - bbox[1]
         text_y = py + ph - text_h
 
         draw.text((px, text_y), text, fill=(20, 20, 40), font=font)
-        print(f"Stamped text '{text}' at ({px},{text_y}) font_size={font_size} ph={ph}")
+        print(f"Stamped text '{text}' at ({px},{text_y}) font_size={font_size} ph={ph} pw={pw}")
     except Exception as e:
         print(f"Warning: could not stamp text '{text}': {e}")
 
