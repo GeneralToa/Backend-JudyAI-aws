@@ -848,9 +848,9 @@ def generate_signed_copy(contract_id):
             py = int(y * img_h)
             ph = int(h * img_h)
 
-            # Stamp starts at 35% across (center of signing column) to 93%
-            stamp_x = int(0.35 * img_w)
-            stamp_w = int(0.58 * img_w)  # 35% to 93%
+            # Stamp starts at 44% across to 93%
+            stamp_x = int(0.44 * img_w)
+            stamp_w = int(0.49 * img_w)  # 44% to 93%
 
             field_type = field.get("field_type", "")
 
