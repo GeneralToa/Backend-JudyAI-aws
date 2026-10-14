@@ -600,7 +600,7 @@ def handle_get_signed_copy(contract_id):
         s3_client.head_object(Bucket=bucket, Key=key)
     except ClientError as e:
         code = e.response.get("Error", {}).get("Code", "")
-        if code in ("404", "NoSuchKey"):
+        if code in ("404", "NoSuchKey", "403"):
             return response(404, {"error": "Signed copy not yet available"})
         print(f"Error checking signed copy for {contract_id}: {e}")
         return response(503, {"error": "Could not check signed copy availability"})
@@ -954,6 +954,7 @@ def _image_to_pdf_page(img):
     Uses low-level canvas (not SimpleDocTemplate) to avoid margin/frame constraints.
     """
     from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.lib.utils import ImageReader
 
     img_w, img_h = img.size
 
@@ -969,8 +970,8 @@ def _image_to_pdf_page(img):
 
     out_buf = io.BytesIO()
     c = rl_canvas.Canvas(out_buf, pagesize=(page_w_pt, page_h_pt))
-    # drawImage fills the entire page with no margins
-    c.drawImage(img_buf, 0, 0, width=page_w_pt, height=page_h_pt)
+    # Use ImageReader to wrap BytesIO — avoids os.path.splitext TypeError
+    c.drawImage(ImageReader(img_buf), 0, 0, width=page_w_pt, height=page_h_pt)
     c.showPage()
     c.save()
     return out_buf.getvalue()
