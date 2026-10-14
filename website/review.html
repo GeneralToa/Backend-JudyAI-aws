@@ -198,6 +198,22 @@
             <h3>Sign Document</h3>
             <div id="review-signature-modal-filename" class="modal-filename"></div>
 
+            <!-- Signer Info Fields -->
+            <div class="sig-info-fields">
+                <div class="sig-info-row">
+                    <label class="sig-info-label">Full Name</label>
+                    <input type="text" id="review-sig-full-name" class="input-field" placeholder="Enter your full name">
+                </div>
+                <div class="sig-info-row">
+                    <label class="sig-info-label">Title</label>
+                    <input type="text" id="review-sig-title" class="input-field" placeholder="e.g. CEO, Manager">
+                </div>
+                <div class="sig-info-row">
+                    <label class="sig-info-label">Date</label>
+                    <input type="text" id="review-sig-date" class="input-field" readonly style="background:var(--bg-tertiary,rgba(255,255,255,0.04));color:var(--text-muted);cursor:default">
+                </div>
+            </div>
+
             <!-- Tabs -->
             <div class="sig-tabs">
                 <button class="sig-tab active" data-tab="draw">Draw</button>

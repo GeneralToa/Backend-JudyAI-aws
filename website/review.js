@@ -671,7 +671,23 @@ function renderActions(contractId, contractName, contractStatus) {
 
     } else if (safeStatus === "signed") {
         headerActions.innerHTML = `<span class="contract-status signed" style="font-size:0.78rem;padding:4px 12px">✓ Signed</span>`;
-        actionBar.innerHTML = "";
+
+        actionBar.innerHTML = `
+            <button id="btn-download-signed" class="btn-primary" style="min-width:180px">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Download Signed Copy
+            </button>`;
+
+        document.getElementById("btn-download-signed").addEventListener("click", () => {
+            downloadSignedCopyFromReview(contractId, decodeURIComponent(contractName));
+        });
+
+        // Try to load the signed PDF into the viewer
+        loadSignedPdf(contractId, documentId, filename);
     }
 }
 
@@ -874,6 +890,72 @@ function openRouteModal(contractId, contractName) {
 }
 
 // =============================================================
+// Signed PDF — load signed copy for signed contracts
+// =============================================================
+async function loadSignedPdf(contractId, documentId, filename) {
+    try {
+        const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/signed-copy`, {
+            headers: { Authorization: getIdToken() },
+        });
+
+        if (res.status === 404) {
+            // Still generating — fall back to original document rendering
+            // loadDocument was already called by loadAnalysis; nothing to do here
+            showToast("Signed copy is still being prepared. Showing original.", "info");
+            return;
+        }
+
+        if (!res.ok) throw new Error(`Error ${res.status}`);
+
+        const data = await res.json();
+
+        // Load the signed PDF via PDF.js — replaces whatever was already rendered
+        loadPdf(data.url);
+
+    } catch (err) {
+        // Non-fatal — original document is already shown
+        console.warn("Could not load signed PDF:", err.message);
+    }
+}
+
+// =============================================================
+// Download Signed Copy — from review page
+// =============================================================
+async function downloadSignedCopyFromReview(contractId, filename) {
+    const btn = document.getElementById("btn-download-signed");
+    if (btn) { btn.disabled = true; btn.textContent = "Preparing..."; }
+
+    try {
+        const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/signed-copy`, {
+            headers: { Authorization: getIdToken() },
+        });
+
+        if (res.status === 404) {
+            showToast("Signed copy is still being prepared. Try again shortly.", "info");
+            return;
+        }
+
+        if (!res.ok) throw new Error("Failed to get download link");
+
+        const data = await res.json();
+        const a = document.createElement("a");
+        a.href = data.url;
+        a.download = `signed-${filename.replace(/\.[^.]+$/, "")}.pdf`;
+        a.target = "_blank";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    } catch (err) {
+        showToast(`Download failed: ${err.message}`, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download Signed Copy`;
+        }
+    }
+}
+
+// =============================================================
 // Document Placeholder
 // =============================================================
 function showPlaceholder(title, sub) {
@@ -1030,13 +1112,16 @@ function showToast(message, type = "info") {
         btnConfirm.textContent = "Signing...";
 
         try {
+            const fullName = (document.getElementById("review-sig-full-name")?.value || "").trim();
+            const title    = (document.getElementById("review-sig-title")?.value    || "").trim();
+
             const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${_contractId}/sign`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: getIdToken(),
                 },
-                body: JSON.stringify({ signatureData }),
+                body: JSON.stringify({ signatureData, fullName, title }),
             });
 
             if (!res.ok) {
@@ -1067,6 +1152,18 @@ function showToast(message, type = "info") {
     window.openReviewSignatureModal = function (contractId, filename) {
         _contractId = contractId;
         document.getElementById("review-signature-modal-filename").textContent = filename;
+
+        // Auto-fill date
+        const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+        const dateEl = document.getElementById("review-sig-date");
+        if (dateEl) dateEl.value = today;
+
+        // Clear name/title
+        const nameEl  = document.getElementById("review-sig-full-name");
+        const titleEl = document.getElementById("review-sig-title");
+        if (nameEl)  nameEl.value  = "";
+        if (titleEl) titleEl.value = "";
+
         // Reset to Draw tab
         activeTab = "draw";
         document.querySelectorAll("#review-signature-modal .sig-tab").forEach(t => t.classList.remove("active"));
