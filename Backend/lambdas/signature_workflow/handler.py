@@ -841,35 +841,37 @@ def generate_signed_copy(contract_id):
             w = float(pos.get("width", 0.1))
             h = float(pos.get("height", 0.05))
 
-            # Convert to pixel coordinates — use exact AI dimensions
-            px = int(x * img_w)
+            # Convert to pixel coordinates
+            # Y position from AI is accurate — use it directly
+            # X position from AI starts AFTER the label text, which is too far right.
+            # Instead, stamp from the left edge of the signing area to right edge.
+            # The signing area on standard documents starts at ~15% and ends at ~93%.
             py = int(y * img_h)
-            pw = int(w * img_w)
             ph = int(h * img_h)
 
-            # Clamp to page bounds — never overflow right edge
-            if px + pw > img_w:
-                pw = img_w - px
+            # Stamp spans the full signing column width
+            stamp_x = int(0.15 * img_w)
+            stamp_w = int(0.78 * img_w)  # 15% to 93%
 
             field_type = field.get("field_type", "")
 
             if field_type == "signature":
                 sig_data = signer.get("signature_data")
                 if sig_data:
-                    _stamp_signature(draw, img, sig_data, px, py, pw, ph)
+                    _stamp_signature(draw, img, sig_data, stamp_x, py, stamp_w, ph)
 
             elif field_type == "full_name":
                 name = signer.get("full_name") or signer.get("email", "")
-                _stamp_text(draw, name, px, py, pw, ph, img_w, img_h)
+                _stamp_text(draw, name, stamp_x, py, stamp_w, ph, img_w, img_h)
 
             elif field_type == "title":
                 title_val = signer.get("title") or ""
-                _stamp_text(draw, title_val, px, py, pw, ph, img_w, img_h)
+                _stamp_text(draw, title_val, stamp_x, py, stamp_w, ph, img_w, img_h)
 
             elif field_type == "date":
                 signed_at = signer.get("signed_at") or ""
                 date_str = signed_at[:10] if signed_at else datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                _stamp_text(draw, date_str, px, py, pw, ph, img_w, img_h)
+                _stamp_text(draw, date_str, stamp_x, py, stamp_w, ph, img_w, img_h)
 
         # Convert stamped image to PDF page using reportlab
         page_pdf_bytes = _image_to_pdf_page(img)
