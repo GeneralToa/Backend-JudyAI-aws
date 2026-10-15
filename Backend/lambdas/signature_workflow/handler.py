@@ -168,6 +168,36 @@ def _resolve_s3_bucket(contract_id):
     return ""
 
 
+def _can_access_contract(contract_id, caller_sub, caller_email):
+    """Return True if the caller is the uploader or a signer of the contract.
+
+    Mirrors the same check used by GET /files and the analysis API.
+    app.contracts.uploaded_by stores the Cognito sub (or email in older rows).
+    Signers are matched by email, case-insensitive.
+    """
+    try:
+        rows = execute_sql_json(
+            "SELECT uploaded_by FROM app.contracts WHERE id = :id::uuid",
+            [p("id", contract_id)],
+        )
+        if not rows:
+            return False
+        uploader = (rows[0].get("uploaded_by") or "").strip().lower()
+        if uploader and uploader in (caller_sub, caller_email):
+            return True
+        if not caller_email:
+            return False
+        signer_rows = execute_sql_json(
+            "SELECT 1 AS ok FROM app.contract_signers "
+            "WHERE contract_id = :id::uuid AND lower(signer_email) = :email LIMIT 1",
+            [p("id", contract_id), p("email", caller_email)],
+        )
+        return bool(signer_rows)
+    except Exception as e:
+        print(f"Warning: access check failed for contract {contract_id}: {e}")
+        return False
+
+
 def lambda_handler(event, context):
     """Route event to appropriate handler based on HTTP method and path."""
     route_key = event.get("routeKey", "")
@@ -187,7 +217,7 @@ def lambda_handler(event, context):
         elif route_key == "POST /contracts/{contractId}/sign":
             return handle_sign(contract_id, user_email, event)
         elif route_key == "GET /contracts/{contractId}/signed-copy":
-            return handle_get_signed_copy(contract_id)
+            return handle_get_signed_copy(contract_id, user_email, event)
         elif route_key == "POST /contracts/{contractId}/cancel-routing":
             return handle_cancel_routing(contract_id, user_email)
         else:
@@ -585,10 +615,20 @@ def handle_sign(contract_id, user_email, event):
 # GET /contracts/{contractId}/signed-copy
 # Return a presigned URL for the signed PDF, or 404 if not ready.
 # =============================================================
-def handle_get_signed_copy(contract_id):
+def handle_get_signed_copy(contract_id, user_email, event):
     """Return presigned URL for the signed PDF copy."""
     if not contract_id:
         return response(400, {"error": "contractId is required"})
+
+    # Auth: only the uploader or a signer may fetch the signed copy
+    authorizer = event.get("requestContext", {}).get("authorizer", {})
+    claims = authorizer.get("jwt", {}).get("claims", {}) or authorizer.get("claims", {})
+    caller_sub   = (claims.get("sub")   or "").strip().lower()
+    caller_email = (claims.get("email") or "").strip().lower()
+
+    if not _can_access_contract(contract_id, caller_sub, caller_email):
+        # Return 404 so contract IDs can't be probed
+        return response(404, {"error": "Signed copy not yet available"})
 
     bucket = _resolve_s3_bucket(contract_id)
     if not bucket:
@@ -735,6 +775,8 @@ def generate_signed_copy(contract_id):
 
     # ------------------------------------------------------------------ #
     # 3. Fetch page images (JPEG) from S3                                 #
+    # Falls back to the original PDF if page images don't exist           #
+    # (PDF uploads — BDA does not rasterize them).                        #
     # ------------------------------------------------------------------ #
     extraction_rows = execute_sql_json(
         """
@@ -761,13 +803,30 @@ def generate_signed_copy(contract_id):
     # Build prefix: replace result.json with assets/rectified_image_
     prefix = raw_key[: -len("result.json")] + "assets/rectified_image_"
 
+    # Look up original PDF S3 key for fallback rendering
+    original_pdf_key = None
+    try:
+        pdf_rows = execute_sql_json(
+            "SELECT s3_key FROM app.contracts WHERE id = :id::uuid",
+            [p("id", contract_id)],
+        )
+        if pdf_rows:
+            original_pdf_key = pdf_rows[0].get("s3_key")
+    except Exception as e:
+        print(f"Warning: could not fetch original PDF key for contract {contract_id}: {e}")
+
+    # Pre-fetch original PDF bytes once if we might need them for fallback
+    original_pdf_bytes = None
+    if original_pdf_key:
+        try:
+            obj = s3_client.get_object(Bucket=bucket, Key=original_pdf_key)
+            original_pdf_bytes = obj["Body"].read()
+            print(f"Fetched original PDF ({len(original_pdf_bytes)} bytes) for fallback rendering")
+        except Exception as e:
+            print(f"Warning: could not fetch original PDF from S3 ({original_pdf_key}): {e}")
+
     # ------------------------------------------------------------------ #
     # 4. Build role → signer mapping                                      #
-    # Rules (from spec):                                                  #
-    #   company signer → matched to fields labeled "company"              #
-    #   supplier signer → matched to any other role label                 #
-    #   One signer per box (last in signing order per role wins)          #
-    #   Unlabeled boxes → filled in page order, last signer per role only #
     # ------------------------------------------------------------------ #
     # Skip field types that are NOT stamped
     SKIP_FIELD_TYPES = {"initial", "company", "text"}
@@ -775,31 +834,76 @@ def generate_signed_copy(contract_id):
     # Build role → last signer mapping (highest signer_order wins per role)
     role_to_signer = {}
     for signer in signers_rows:
-        role = (signer.get("role") or "").lower()
-        role_to_signer[role] = signer  # later rows overwrite earlier ones
+        role = (signer.get("role") or "").strip().lower()
+        if role:
+            role_to_signer[role] = signer
+
+    # For unlabeled fields, assign signers in page order (round-robin)
+    _unlabeled_signer_idx = [0]
+
+    # Pre-build a fallback mapping: unique field roles → signers by signer_order.
+    # When a field's signer_role has no match in role_to_signer, we assign
+    # signers positionally — first unique unmatched field role gets signer 1,
+    # second gets signer 2, etc.
+    _unique_field_roles = []
+    for f in fields_rows:
+        fr = (f.get("signer_role") or "").strip().lower()
+        if fr and fr not in _unique_field_roles and fr not in role_to_signer:
+            _unique_field_roles.append(fr)
+
+    # Collect signers that have no direct role match in the fields
+    _unmatched_signers = [
+        s for s in signers_rows
+        if (s.get("role") or "").strip().lower() not in
+           [(f.get("signer_role") or "").strip().lower() for f in fields_rows]
+    ]
+    # Map unmatched field roles → unmatched signers positionally
+    _fallback_role_map = {}
+    for i, fr in enumerate(_unique_field_roles):
+        if i < len(_unmatched_signers):
+            _fallback_role_map[fr] = _unmatched_signers[i]
+        elif signers_rows:
+            _fallback_role_map[fr] = signers_rows[i % len(signers_rows)]
 
     def match_signer_for_field(field):
-        """Return the signer dict that should fill this field, or None."""
-        field_role = (field.get("signer_role") or field.get("label") or "").lower()
+        """Return the signer dict that should fill this field, or None.
+
+        Match on signer_role only — label text is never used as a party identifier.
+        When signer_role is empty, assign signers in page order.
+        When signer_role has no direct match, use positional fallback mapping.
+        """
+        field_role = (field.get("signer_role") or "").strip().lower()
 
         if not field_role:
-            # Unlabeled — return any signer (last one by default)
-            return signers_rows[-1] if signers_rows else None
+            if not signers_rows:
+                return None
+            idx = _unlabeled_signer_idx[0] % len(signers_rows)
+            _unlabeled_signer_idx[0] += 1
+            return signers_rows[idx]
 
-        # company field → company signer
-        if field_role == "company":
-            return role_to_signer.get("company")
+        # Exact role match
+        if field_role in role_to_signer:
+            return role_to_signer[field_role]
 
-        # supplier / vendor / advisor / recipient / customer → non-company signer
+        # Partial match — field_role is a substring of a signer role or vice versa
         for role, signer in role_to_signer.items():
-            if role != "company":
+            if field_role in role or role in field_role:
                 return signer
+
+        # Positional fallback — map unmatched field roles to signers by order
+        if field_role in _fallback_role_map:
+            return _fallback_role_map[field_role]
+
+        # Last resort: single signer gets everything
+        if len(signers_rows) == 1:
+            return signers_rows[0]
 
         return None
 
     # ------------------------------------------------------------------ #
     # 5. Stamp each page                                                  #
     # ------------------------------------------------------------------ #
+
     pdf_writer = PdfWriter()
 
     for page_idx in range(page_count):
@@ -807,15 +911,37 @@ def generate_signed_copy(contract_id):
 
         # Download page JPEG from S3
         page_key = f"{prefix}{page_idx}.png"  # key name has .png extension (actually JPEG)
+        img = None
         try:
             obj = s3_client.get_object(Bucket=bucket, Key=page_key)
             img_bytes = obj["Body"].read()
-        except ClientError as e:
-            print(f"Warning: could not fetch page {page_num} ({page_key}): {e}")
-            # Create a blank white page instead of failing
-            img = Image.new("RGB", (1700, 2200), color=(255, 255, 255))
-        else:
             img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        except ClientError:
+            pass  # fall through to PDF fallback
+
+        if img is None:
+            # Page image not found — stamp directly onto the original PDF page
+            if original_pdf_bytes:
+                try:
+                    page_fields = [
+                        f for f in fields_rows
+                        if f.get("page") == page_num
+                        and f.get("position")
+                    ]
+                    stamped_page_bytes = _stamp_pdf_page_direct(
+                        original_pdf_bytes, page_idx, page_fields,
+                        signers_rows, match_signer_for_field,
+                    )
+                    page_reader = PdfReader(io.BytesIO(stamped_page_bytes))
+                    pdf_writer.add_page(page_reader.pages[0])
+                    print(f"Stamped page {page_num} directly onto original PDF page")
+                    continue  # skip the image-based stamping below
+                except Exception as e:
+                    print(f"Warning: direct PDF stamp failed for page {page_num}: {e}")
+
+            # Last resort: blank white page
+            print(f"Warning: no image or PDF source for page {page_num}, using blank")
+            img = Image.new("RGB", (2550, 3300), color=(255, 255, 255))
 
         img_w, img_h = img.size
 
@@ -842,15 +968,15 @@ def generate_signed_copy(contract_id):
             h = float(pos.get("height", 0.05))
 
             # Convert to pixel coordinates
-            # Y position from AI is accurate — use it directly
-            # X position from AI starts AFTER the label text, which is too far right.
-            # Stamp from center-left of the signing area to right edge.
             py = int(y * img_h)
             ph = int(h * img_h)
 
-            # Stamp starts at 55% across to 93%
-            stamp_x = int(0.55 * img_w)
-            stamp_w = int(0.38 * img_w)  # 55% to 93%
+            # Use AI x directly — it matches the purple field boxes the signer sees.
+            # Clamp right edge so the stamp doesn't overflow the page.
+            stamp_x = max(0, int(x * img_w))
+            stamp_w = int(w * img_w)
+            if stamp_x + stamp_w > img_w:
+                stamp_w = img_w - stamp_x
 
             field_type = field.get("field_type", "")
 
@@ -908,6 +1034,138 @@ def generate_signed_copy(contract_id):
 # Helpers — image stamping                                             #
 # ------------------------------------------------------------------ #
 
+def _render_pdf_page(pdf_bytes, page_idx):
+    """Render a single PDF page to a PIL Image.
+
+    Requires poppler to be present in the Lambda environment (via a layer).
+    If poppler is not available, raises ImportError so the caller can fall
+    back to direct PDF stamping via _stamp_pdf_page_direct().
+    """
+    from pdf2image import convert_from_bytes  # requires poppler layer
+    images = convert_from_bytes(pdf_bytes, dpi=150, first_page=page_idx + 1, last_page=page_idx + 1)
+    if not images:
+        raise RuntimeError(f"pdf2image returned no images for page {page_idx}")
+    return images[0].convert("RGB")
+
+
+def _stamp_pdf_page_direct(pdf_bytes, page_idx, fields_on_page, signers_rows,
+                            match_signer_for_field):
+    """Stamp signatures directly onto a PDF page without rasterizing.
+
+    Used when page images are not available (PDF uploads). Draws stamp content
+    as a reportlab PDF overlay and merges it onto the original page with pypdf.
+    Returns a single-page PDF as bytes.
+    """
+    from pypdf import PdfReader, PdfWriter
+    from reportlab.pdfgen import canvas as rl_canvas
+    from PIL import Image
+
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    if page_idx >= len(reader.pages):
+        raise ValueError(f"Page index {page_idx} out of range")
+
+    page = reader.pages[page_idx]
+    media_box = page.mediabox
+    page_w_pt = float(media_box.width)
+    page_h_pt = float(media_box.height)
+
+    # Build overlay PDF with stamps
+    overlay_buf = io.BytesIO()
+    c = rl_canvas.Canvas(overlay_buf, pagesize=(page_w_pt, page_h_pt))
+
+    font_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "font.ttf")
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        pdfmetrics.registerFont(TTFont("CustomFont", font_path))
+        overlay_font = "CustomFont"
+    except Exception:
+        overlay_font = "Helvetica"
+
+    SKIP_FIELD_TYPES = {"initial", "company", "text"}
+
+    for field in fields_on_page:
+        if field.get("field_type") in SKIP_FIELD_TYPES:
+            continue
+        if not field.get("position"):
+            continue
+
+        signer = match_signer_for_field(field)
+        if not signer:
+            continue
+
+        pos = field["position"]
+        x = float(pos.get("x", 0))
+        y = float(pos.get("y", 0))
+        w = float(pos.get("width", 0.1))
+        h = float(pos.get("height", 0.05))
+
+        # Use AI x directly, clamp to page bounds
+        stamp_x_pt = max(0.0, x * page_w_pt)
+        stamp_w_pt = min(w * page_w_pt, page_w_pt - stamp_x_pt)
+
+        # reportlab origin is bottom-left; convert from top-left normalized coords
+        stamp_h_pt = h * page_h_pt
+        stamp_y_pt = page_h_pt - (y * page_h_pt) - stamp_h_pt
+
+        field_type = field.get("field_type", "")
+
+        if field_type == "signature":
+            sig_data = signer.get("signature_data") or ""
+            if sig_data:
+                try:
+                    if "," in sig_data:
+                        sig_data = sig_data.split(",", 1)[1]
+                    sig_bytes = base64.b64decode(sig_data)
+                    sig_img = Image.open(io.BytesIO(sig_bytes)).convert("RGBA")
+                    # Scale to fit stamp area preserving aspect ratio
+                    sig_img.thumbnail((int(stamp_w_pt), int(stamp_h_pt)), Image.LANCZOS)
+                    sig_buf = io.BytesIO()
+                    sig_img.save(sig_buf, format="PNG")
+                    sig_buf.seek(0)
+                    from reportlab.lib.utils import ImageReader
+                    c.drawImage(
+                        ImageReader(sig_buf),
+                        stamp_x_pt,
+                        stamp_y_pt + (stamp_h_pt - sig_img.height) / 2,
+                        width=sig_img.width,
+                        height=sig_img.height,
+                        mask="auto",
+                    )
+                except Exception as e:
+                    print(f"Warning: could not draw signature overlay: {e}")
+
+        else:
+            if field_type == "full_name":
+                text = signer.get("full_name") or signer.get("email", "")
+            elif field_type == "title":
+                text = signer.get("title") or ""
+            elif field_type == "date":
+                signed_at = signer.get("signed_at") or ""
+                text = signed_at[:10] if signed_at else datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            else:
+                text = ""
+
+            if text:
+                font_size = max(8, int(stamp_h_pt * 0.7))
+                c.setFont(overlay_font, font_size)
+                c.setFillColorRGB(20 / 255, 20 / 255, 40 / 255)
+                c.drawString(stamp_x_pt, stamp_y_pt + stamp_h_pt * 0.15, text)
+
+    c.save()
+    overlay_buf.seek(0)
+
+    # Merge overlay onto original page
+    overlay_reader = PdfReader(overlay_buf)
+    page.merge_page(overlay_reader.pages[0])
+
+    writer = PdfWriter()
+    writer.add_page(page)
+    out_buf = io.BytesIO()
+    writer.write(out_buf)
+    return out_buf.getvalue()
+
+
 def _stamp_signature(draw, base_img, sig_data_b64, px, py, pw, ph):
     """Decode a base64 PNG signature and paste it onto the image."""
     from PIL import Image
@@ -941,8 +1199,10 @@ def _stamp_text(draw, text, px, py, pw, ph, img_w, img_h):
     try:
         font_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "font.ttf")
 
-        # Start at ph * 0.7, shrink until text fits within pw
-        font_size = max(12, int(ph * 0.7))
+        # Scale font to field height — 50% of box height keeps text cleanly inside
+        # without overflowing into adjacent fields below.
+        # Shrinks further if text is too wide for the field width.
+        font_size = max(12, int(ph * 0.5))
         font = ImageFont.truetype(font_path, font_size)
 
         # Shrink font until text fits within available width
@@ -954,10 +1214,10 @@ def _stamp_text(draw, text, px, py, pw, ph, img_w, img_h):
             font_size -= 2
             font = ImageFont.truetype(font_path, font_size)
 
-        # Place text slightly above the line
+        # Place text vertically centered within the field box
         bbox = draw.textbbox((0, 0), text, font=font)
         text_h = bbox[3] - bbox[1]
-        text_y = py - text_h - 4  # just above the field top
+        text_y = py + (ph - text_h) // 2
 
         draw.text((px, text_y), text, fill=(20, 20, 40), font=font)
         print(f"Stamped text '{text}' at ({px},{text_y}) font_size={font_size} ph={ph} pw={pw}")
