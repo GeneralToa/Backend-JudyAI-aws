@@ -1074,6 +1074,10 @@ def _stamp_pdf_page_direct(pdf_bytes, page_idx, fields_on_page, signers_rows,
                             r, g, b, a = pixels[sx, sy]
                             if r > 230 and g > 230 and b > 230:
                                 pixels[sx, sy] = (r, g, b, 0)
+                    # Crop to drawn area so whitespace doesn't shrink the signature
+                    bbox = sig_img.getbbox()
+                    if bbox:
+                        sig_img = sig_img.crop(bbox)
                     # Scale to fit stamp area preserving aspect ratio
                     sig_img.thumbnail((int(stamp_w_pt), int(stamp_h_pt)), Image.LANCZOS)
                     sig_buf = io.BytesIO()
@@ -1142,6 +1146,11 @@ def _stamp_signature(draw, base_img, sig_data_b64, px, py, pw, ph):
                 if r > 230 and g > 230 and b > 230:
                     pixels[x, y] = (r, g, b, 0)
 
+        # Crop to drawn area so empty whitespace doesn't shrink the signature
+        bbox = sig_img.getbbox()
+        if bbox:
+            sig_img = sig_img.crop(bbox)
+
         # Target size: field width x field height
         target_w = pw
         target_h = ph
@@ -1165,10 +1174,9 @@ def _stamp_text(draw, text, px, py, pw, ph, img_w, img_h):
     try:
         font_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "font.ttf")
 
-        # Scale font to field height — 50% of box height keeps text cleanly inside
-        # without overflowing into adjacent fields below.
-        # Shrinks further if text is too wide for the field width.
-        font_size = max(12, int(ph * 0.5))
+        # Scale font to field height — 70% fills the box naturally.
+        # Shrinks if text is too wide for the field width.
+        font_size = max(12, int(ph * 0.7))
         font = ImageFont.truetype(font_path, font_size)
 
         # Shrink font until text fits within available width
@@ -1180,13 +1188,15 @@ def _stamp_text(draw, text, px, py, pw, ph, img_w, img_h):
             font_size -= 2
             font = ImageFont.truetype(font_path, font_size)
 
-        # Place text vertically centered within the field box
+        # Center text horizontally within the field box, vertically centered
         bbox = draw.textbbox((0, 0), text, font=font)
+        text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
+        text_x = px + (pw - text_w) // 2
         text_y = py + (ph - text_h) // 2
 
-        draw.text((px, text_y), text, fill=(20, 20, 40), font=font)
-        print(f"Stamped text '{text}' at ({px},{text_y}) font_size={font_size} ph={ph} pw={pw}")
+        draw.text((text_x, text_y), text, fill=(20, 20, 40), font=font)
+        print(f"Stamped text '{text}' at ({text_x},{text_y}) font_size={font_size} ph={ph} pw={pw}")
     except Exception as e:
         print(f"Warning: could not stamp text '{text}': {e}")
 
