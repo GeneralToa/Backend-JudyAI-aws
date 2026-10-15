@@ -831,74 +831,36 @@ def generate_signed_copy(contract_id):
     # Skip field types that are NOT stamped
     SKIP_FIELD_TYPES = {"initial", "company", "text"}
 
-    # Build role → last signer mapping (highest signer_order wins per role)
+    # Build role → signer mapping (last signer per role wins)
     role_to_signer = {}
     for signer in signers_rows:
         role = (signer.get("role") or "").strip().lower()
         if role:
             role_to_signer[role] = signer
 
-    # For unlabeled fields, assign signers in page order (round-robin)
-    _unlabeled_signer_idx = [0]
-
-    # Pre-build a fallback mapping: unique field roles → signers by signer_order.
-    # When a field's signer_role has no match in role_to_signer, we assign
-    # signers positionally — first unique unmatched field role gets signer 1,
-    # second gets signer 2, etc.
-    _unique_field_roles = []
-    for f in fields_rows:
-        fr = (f.get("signer_role") or "").strip().lower()
-        if fr and fr not in _unique_field_roles and fr not in role_to_signer:
-            _unique_field_roles.append(fr)
-
-    # Collect signers that have no direct role match in the fields
-    _unmatched_signers = [
-        s for s in signers_rows
-        if (s.get("role") or "").strip().lower() not in
-           [(f.get("signer_role") or "").strip().lower() for f in fields_rows]
-    ]
-    # Map unmatched field roles → unmatched signers positionally
-    _fallback_role_map = {}
-    for i, fr in enumerate(_unique_field_roles):
-        if i < len(_unmatched_signers):
-            _fallback_role_map[fr] = _unmatched_signers[i]
-        elif signers_rows:
-            _fallback_role_map[fr] = signers_rows[i % len(signers_rows)]
+    # Identify the company signer and the non-company signer(s)
+    company_signer = role_to_signer.get("company")
+    other_signers = [s for s in signers_rows if (s.get("role") or "").strip().lower() != "company"]
+    # Use the first non-company signer (lowest signer_order) as the "other party" signer
+    other_signer = other_signers[0] if other_signers else None
 
     def match_signer_for_field(field):
-        """Return the signer dict that should fill this field, or None.
+        """Return the signer that should fill this field, or None.
 
-        Match on signer_role only — label text is never used as a party identifier.
-        When signer_role is empty, assign signers in page order.
-        When signer_role has no direct match, use positional fallback mapping.
+        Rule:
+          - field signer_role == "company" → company signer only.
+            No company signer = return None (field stays empty).
+          - field signer_role is anything else (vendor, supplier, advisor,
+            recipient, etc.) → the non-company signer.
+          - field signer_role is empty → non-company signer (page order).
         """
         field_role = (field.get("signer_role") or "").strip().lower()
 
-        if not field_role:
-            if not signers_rows:
-                return None
-            idx = _unlabeled_signer_idx[0] % len(signers_rows)
-            _unlabeled_signer_idx[0] += 1
-            return signers_rows[idx]
+        if field_role == "company":
+            return company_signer  # None if no company signer — field stays empty
 
-        # Exact role match
-        if field_role in role_to_signer:
-            return role_to_signer[field_role]
-
-        # Partial match — field_role is a substring of a signer role or vice versa
-        for role, signer in role_to_signer.items():
-            if field_role in role or role in field_role:
-                return signer
-
-        # Positional fallback — map unmatched field roles to signers by order
-        if field_role in _fallback_role_map:
-            return _fallback_role_map[field_role]
-
-        # Last resort: single signer gets everything
-        if len(signers_rows) == 1:
-            return signers_rows[0]
-
-        return None
+        # All other roles (including empty) go to the non-company signer
+        return other_signer
 
     # ------------------------------------------------------------------ #
     # 5. Stamp each page                                                  #
@@ -1034,19 +996,6 @@ def generate_signed_copy(contract_id):
 # Helpers — image stamping                                             #
 # ------------------------------------------------------------------ #
 
-def _render_pdf_page(pdf_bytes, page_idx):
-    """Render a single PDF page to a PIL Image.
-
-    Requires poppler to be present in the Lambda environment (via a layer).
-    If poppler is not available, raises ImportError so the caller can fall
-    back to direct PDF stamping via _stamp_pdf_page_direct().
-    """
-    from pdf2image import convert_from_bytes  # requires poppler layer
-    images = convert_from_bytes(pdf_bytes, dpi=150, first_page=page_idx + 1, last_page=page_idx + 1)
-    if not images:
-        raise RuntimeError(f"pdf2image returned no images for page {page_idx}")
-    return images[0].convert("RGB")
-
 
 def _stamp_pdf_page_direct(pdf_bytes, page_idx, fields_on_page, signers_rows,
                             match_signer_for_field):
@@ -1118,6 +1067,13 @@ def _stamp_pdf_page_direct(pdf_bytes, page_idx, fields_on_page, signers_rows,
                         sig_data = sig_data.split(",", 1)[1]
                     sig_bytes = base64.b64decode(sig_data)
                     sig_img = Image.open(io.BytesIO(sig_bytes)).convert("RGBA")
+                    # Make white/near-white pixels transparent
+                    pixels = sig_img.load()
+                    for sy in range(sig_img.height):
+                        for sx in range(sig_img.width):
+                            r, g, b, a = pixels[sx, sy]
+                            if r > 230 and g > 230 and b > 230:
+                                pixels[sx, sy] = (r, g, b, 0)
                     # Scale to fit stamp area preserving aspect ratio
                     sig_img.thumbnail((int(stamp_w_pt), int(stamp_h_pt)), Image.LANCZOS)
                     sig_buf = io.BytesIO()
@@ -1167,7 +1123,9 @@ def _stamp_pdf_page_direct(pdf_bytes, page_idx, fields_on_page, signers_rows,
 
 
 def _stamp_signature(draw, base_img, sig_data_b64, px, py, pw, ph):
-    """Decode a base64 PNG signature and paste it onto the image."""
+    """Decode a base64 PNG signature and paste it onto the image.
+    White pixels are made transparent so the document line shows through.
+    """
     from PIL import Image
     try:
         # Remove data URL prefix if present
@@ -1176,7 +1134,15 @@ def _stamp_signature(draw, base_img, sig_data_b64, px, py, pw, ph):
         sig_bytes = base64.b64decode(sig_data_b64)
         sig_img = Image.open(io.BytesIO(sig_bytes)).convert("RGBA")
 
-        # Target size: field width, height = exactly field height (no overflow)
+        # Make white (and near-white) pixels transparent
+        pixels = sig_img.load()
+        for y in range(sig_img.height):
+            for x in range(sig_img.width):
+                r, g, b, a = pixels[x, y]
+                if r > 230 and g > 230 and b > 230:
+                    pixels[x, y] = (r, g, b, 0)
+
+        # Target size: field width x field height
         target_w = pw
         target_h = ph
         sig_img.thumbnail((target_w, target_h), Image.LANCZOS)
