@@ -72,7 +72,7 @@ Likely ones, with short answers:
 
 - **"Can we add our own playbook?"** Yes, if it follows the same structure (section, standard
   sentence, objection, replacement). A differently structured playbook needs converter changes —
-  a next-phase item.
+  a next-phase item. Step by step: [`PLAYBOOK_UPDATE_GUIDE.md`](PLAYBOOK_UPDATE_GUIDE.md).
 - **"Can it recognise vendor agreements as a type?"** Not as a fourth type in this scope; they are
   analysed and get their fields placed, reported as "not one of the three types".
 - **"Can Judy draft or send things for us?"** Not in this proof of concept. That is the next phase,

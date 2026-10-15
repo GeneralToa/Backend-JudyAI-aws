@@ -281,7 +281,8 @@ converter warns if a correction stops matching a reissued playbook.
 
 The converter expects the current structure — section, then standard sentence with "Because"
 and the objection, then the action (replace, insert, exhibit, approval, escalate). A playbook in
-a different structure needs converter changes.
+a different structure needs converter changes. Step-by-step instructions, for the playbook author
+and the developer, are in [`PLAYBOOK_UPDATE_GUIDE.md`](PLAYBOOK_UPDATE_GUIDE.md).
 
 ### 6.5 Change the model or a prompt
 
