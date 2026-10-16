@@ -1393,6 +1393,59 @@ body {
     color: var(--accent, #7c4dff);
 }
 
+/* Type tab — two preview cards (Full Signature + Initials) */
+.sig-preview-cards {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    margin-top: 4px;
+}
+
+.sig-preview-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    border: 2px solid var(--border, #333);
+    border-radius: 10px;
+    padding: 10px 8px 8px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: var(--bg-elevated, #1a1a2e);
+    min-width: 0;
+}
+
+.sig-preview-card:hover {
+    border-color: rgba(124, 77, 255, 0.5);
+}
+
+.sig-preview-card.active {
+    border-color: var(--accent, #7c4dff);
+    background: rgba(124, 77, 255, 0.06);
+}
+
+.sig-preview-card-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted, #888);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    align-self: flex-start;
+}
+
+.sig-preview-card.active .sig-preview-card-label {
+    color: var(--accent, #7c4dff);
+}
+
+.sig-preview-canvas {
+    width: 100%;
+    height: 100px;
+    background: #fff;
+    border-radius: 6px;
+    display: block;
+}
+
 .sig-font-btn[data-font="Dancing Script"] { font-family: 'Dancing Script', cursive; font-size: 16px; }
 .sig-font-btn[data-font="Great Vibes"] { font-family: 'Great Vibes', cursive; font-size: 16px; }
 .sig-font-btn[data-font="Pacifico"] { font-family: 'Pacifico', cursive; font-size: 14px; }
