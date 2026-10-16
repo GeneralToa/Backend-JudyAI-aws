@@ -55,7 +55,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // --- Render header actions + action bar ---
-    renderActions(contractId, contractName, contractStatus);
+    renderActions(contractId, contractName, contractStatus, documentId, decodeURIComponent(contractName));
 
     // --- Load analysis (fetches pageImages) + document in one shot ---
     // loadAnalysis extracts extraction.pageImages and calls loadDocument() itself
@@ -125,8 +125,9 @@ async function loadAnalysis(contractId, contractStatus, documentId, filename) {
         // Document viewer falls back to showPlaceholder / PDF.js — AI panel still loads.
     }
 
-    // Kick off document loading now that we have (possibly empty) pageImages
-    loadDocument(contractId, documentId, filename, pageImages);
+    // Kick off document loading now that we have (possibly empty) pageImages.
+    // Pass contractStatus so loadDocument can skip BDA rendering for signed contracts.
+    loadDocument(contractId, documentId, filename, pageImages, contractStatus);
 
     // --- Step 2: fetch summary + risks — these drive the AI panel ---
     try {
@@ -197,8 +198,18 @@ async function fetchTemplateBadge(contractId) {
 // Document Loading — branches on file type + pageImages
 // Task #2
 // =============================================================
-async function loadDocument(contractId, documentId, filename, pageImages) {
+async function loadDocument(contractId, documentId, filename, pageImages, contractStatus) {
     const ext = (filename.split(".").pop() || "").toLowerCase();
+
+    // Signed contracts: skip BDA / original PDF entirely.
+    // loadSignedPdf() (called from renderActions) will take over the viewer.
+    // Also defensively remove any BDA container that might exist from a previous load.
+    if (contractStatus === "signed") {
+        const stale = document.getElementById("review-bda-container");
+        if (stale) stale.remove();
+        document.getElementById("review-pdf-canvas").classList.add("hidden");
+        return;  // loadSignedPdf handles the placeholder + viewer
+    }
 
     // DOCX with BDA images → render image stack
     if ((ext === "docx" || ext === "doc") && pageImages.length > 0) {
@@ -472,10 +483,13 @@ function onViewportScroll() {
 // =============================================================
 function loadPdf(url) {
     viewerMode = "pdf";
+    currentScale = 1.0;  // reset so auto-fit recalculates for this PDF
 
-    const script = document.createElement("script");
-    script.src = PDFJS_CDN;
-    script.onload = () => {
+    // Hide BDA container if it was showing
+    const bdaContainer = document.getElementById("review-bda-container");
+    if (bdaContainer) bdaContainer.style.display = "none";
+
+    function initPdf() {
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
 
         showPlaceholder("Loading document...", "");
@@ -500,10 +514,23 @@ function loadPdf(url) {
             const viewport = document.getElementById("review-doc-viewport");
             viewport.addEventListener("scroll", onViewportScroll, { passive: true });
 
+            // Wheel zoom — Ctrl+scroll or trackpad pinch on the viewport
+            viewport.addEventListener("wheel", onPdfWheelZoom, { passive: false });
+
         }).catch(err => {
             showPlaceholder("Could not render PDF", err.message);
         });
-    };
+    }
+
+    // If PDF.js already loaded, use it directly — don't append script again
+    if (window.pdfjsLib) {
+        initPdf();
+        return;
+    }
+
+    const script = document.createElement("script");
+    script.src = PDFJS_CDN;
+    script.onload = initPdf;
     script.onerror = () => showPlaceholder("Could not load PDF viewer", "PDF.js failed to load.");
     document.head.appendChild(script);
 }
@@ -512,24 +539,54 @@ function renderPdfPage(pageNum) {
     if (!pdfDoc) return;
 
     pdfDoc.getPage(pageNum).then(page => {
-        const canvas = document.getElementById("review-pdf-canvas");
-        const ctx    = canvas.getContext("2d");
+        const canvas      = document.getElementById("review-pdf-canvas");
+        const viewportEl  = document.getElementById("review-doc-viewport");
+        const ctx         = canvas.getContext("2d");
 
-        const viewport = page.getViewport({ scale: currentScale });
-        canvas.width  = viewport.width;
-        canvas.height = viewport.height;
+        // Auto-fit: when scale is at the "unset" sentinel (1.0 coming from loadPdf reset),
+        // compute a fit-to-width scale based on available viewport width.
+        // This runs every time a new PDF is loaded (loadPdf sets currentScale = 1.0).
+        if (currentScale === 1.0) {
+            const availableWidth = (viewportEl.clientWidth || 800) - 48; // 24px padding × 2
+            const naturalWidth   = page.getViewport({ scale: 1.0 }).width;
+            if (naturalWidth > 0) {
+                currentScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, availableWidth / naturalWidth));
+            }
+        }
 
-        page.render({ canvasContext: ctx, viewport }).promise.then(() => {
+        const pdfViewport = page.getViewport({ scale: currentScale });
+        canvas.width  = pdfViewport.width;
+        canvas.height = pdfViewport.height;
+
+        page.render({ canvasContext: ctx, viewport: pdfViewport }).promise.then(() => {
             currentPage = pageNum;
             updatePageIndicator();
             updateZoomLabel();
-
-            // Draw field overlays for signer mode
             drawPdfFieldOverlays(ctx, canvas, pageNum);
-
             updateNavButtons();
         });
     });
+}
+
+// =============================================================
+// Wheel / pinch zoom for PDF mode
+// Ctrl+wheel or a two-finger pinch gesture adjusts scale.
+// Plain scroll (no Ctrl key) is left to the browser for natural panning.
+// =============================================================
+function onPdfWheelZoom(e) {
+    if (viewerMode !== "pdf") return;
+
+    // Only intercept Ctrl+wheel (zoom gesture) — let plain scroll through for panning
+    if (!e.ctrlKey) return;
+
+    e.preventDefault();
+
+    const delta = e.deltaY > 0 ? -SCALE_STEP : SCALE_STEP;
+    const next  = Math.min(MAX_SCALE, Math.max(MIN_SCALE, currentScale + delta));
+    if (next === currentScale) return;
+
+    currentScale = next;
+    renderPdfPage(currentPage);
 }
 
 // =============================================================
@@ -606,7 +663,7 @@ function updateNavButtons() {
 // =============================================================
 // Actions — header right + bottom bar based on contract status
 // =============================================================
-function renderActions(contractId, contractName, contractStatus) {
+function renderActions(contractId, contractName, contractStatus, documentId, filename) {
     const headerActions = document.getElementById("review-header-actions");
     const actionBar     = document.getElementById("review-action-bar");
 
@@ -890,32 +947,66 @@ function openRouteModal(contractId, contractName) {
 }
 
 // =============================================================
-// Signed PDF — load signed copy for signed contracts
+// Signed PDF — poll until ready then load cleanly
 // =============================================================
 async function loadSignedPdf(contractId, documentId, filename) {
-    try {
-        const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/signed-copy`, {
-            headers: { Authorization: getIdToken() },
-        });
+    const MAX_ATTEMPTS = 20;
+    const POLL_INTERVAL = 6000;
 
-        if (res.status === 404) {
-            // Still generating — fall back to original document rendering
-            // loadDocument was already called by loadAnalysis; nothing to do here
-            showToast("Signed copy is still being prepared. Showing original.", "info");
+    // --- Immediately clear the viewport before we even start polling ---
+    // This prevents BDA images (if any slipped through) from showing while we wait.
+    if (_bdaRefreshTimer) { clearInterval(_bdaRefreshTimer); _bdaRefreshTimer = null; }
+    _bdaContractId = null;
+    bdaPages = [];
+    const existingBda = document.getElementById("review-bda-container");
+    if (existingBda) existingBda.remove();
+    // Also hide the PDF canvas until we actually have a URL to render
+    document.getElementById("review-pdf-canvas").classList.add("hidden");
+    document.getElementById("review-docx-iframe").classList.add("hidden");
+    showPlaceholder("Loading signed copy…", "Fetching the signed document. This may take a moment.");
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+            const res = await fetch(`${CONFIG.API_BASE_URL}/contracts/${contractId}/signed-copy`, {
+                headers: { Authorization: getIdToken() },
+            });
+
+            if (res.status === 404) {
+                if (attempt === 1) {
+                    showToast("Signed copy is being prepared. Will load automatically when ready.", "info");
+                }
+                await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+                continue;
+            }
+
+            if (!res.ok) throw new Error(`Error ${res.status}`);
+
+            const data = await res.json();
+
+            // Hide placeholder; show canvas shell so loadPdf has something to work with
+            document.getElementById("review-doc-placeholder").classList.add("hidden");
+            document.getElementById("review-pdf-canvas").classList.remove("hidden");
+
+            // Reset viewer state before loading so renderPdfPage auto-fits correctly
+            viewerMode = "pdf";
+            currentScale = 1.0;
+            currentPage  = 1;
+            totalPages   = 0;
+            pdfDoc       = null;
+
+            loadPdf(data.url);
+            showToast("Signed copy loaded.", "success");
+            return;
+
+        } catch (err) {
+            console.warn("Could not load signed PDF:", err.message);
+            showPlaceholder("Could not load signed copy", err.message);
             return;
         }
-
-        if (!res.ok) throw new Error(`Error ${res.status}`);
-
-        const data = await res.json();
-
-        // Load the signed PDF via PDF.js — replaces whatever was already rendered
-        loadPdf(data.url);
-
-    } catch (err) {
-        // Non-fatal — original document is already shown
-        console.warn("Could not load signed PDF:", err.message);
     }
+
+    showPlaceholder("Signed copy not ready", "The signed document is still being generated. Try refreshing the page in a moment.");
+    console.warn("Signed copy not ready after max attempts.");
 }
 
 // =============================================================
@@ -1007,20 +1098,23 @@ function showToast(message, type = "info") {
 // Signature Modal — Draw + Type canvas + POST /sign
 // =============================================================
 (function () {
-    const modal       = document.getElementById("review-signature-modal");
-    const drawCanvas  = document.getElementById("review-signature-canvas");
-    const typeCanvas  = document.getElementById("review-signature-type-canvas");
-    const drawCtx     = drawCanvas.getContext("2d");
-    const typeCtx     = typeCanvas.getContext("2d");
-    const btnClear    = document.getElementById("review-btn-clear-signature");
-    const btnCancel   = document.getElementById("review-signature-modal-cancel");
-    const btnConfirm  = document.getElementById("review-signature-modal-confirm");
-    const sigTextInput = document.getElementById("review-signature-text");
+    const modal          = document.getElementById("review-signature-modal");
+    const drawCanvas     = document.getElementById("review-signature-canvas");
+    const typeCanvas     = document.getElementById("review-signature-type-canvas");
+    const initialsCanvas = document.getElementById("review-signature-initials-canvas");
+    const drawCtx        = drawCanvas.getContext("2d");
+    const typeCtx        = typeCanvas.getContext("2d");
+    const initialsCtx    = initialsCanvas.getContext("2d");
+    const btnClear       = document.getElementById("review-btn-clear-signature");
+    const btnCancel      = document.getElementById("review-signature-modal-cancel");
+    const btnConfirm     = document.getElementById("review-signature-modal-confirm");
+    const sigTextInput   = document.getElementById("review-signature-text");
 
-    let isDrawing    = false;
-    let activeTab    = "draw";
-    let selectedFont = "Dancing Script";
-    let _contractId  = null;
+    let isDrawing      = false;
+    let activeTab      = "draw";
+    let selectedFont   = "Dancing Script";
+    let selectedTypeMode = "full";   // "full" | "initials"
+    let _contractId    = null;
 
     // --- Tab switching ---
     document.querySelectorAll("#review-signature-modal .sig-tab").forEach(tab => {
@@ -1030,6 +1124,15 @@ function showToast(message, type = "info") {
             activeTab = tab.dataset.tab;
             document.getElementById("review-sig-tab-draw").classList.toggle("hidden", activeTab !== "draw");
             document.getElementById("review-sig-tab-type").classList.toggle("hidden", activeTab !== "type");
+        });
+    });
+
+    // --- Preview card selection ---
+    document.querySelectorAll("#review-signature-modal .sig-preview-card").forEach(card => {
+        card.addEventListener("click", () => {
+            document.querySelectorAll("#review-signature-modal .sig-preview-card").forEach(c => c.classList.remove("active"));
+            card.classList.add("active");
+            selectedTypeMode = card.dataset.mode;
         });
     });
 
@@ -1066,10 +1169,30 @@ function showToast(message, type = "info") {
         typeCtx.fillRect(0, 0, typeCanvas.width, typeCanvas.height);
     }
 
+    function clearInitialsCanvas() {
+        initialsCtx.clearRect(0, 0, initialsCanvas.width, initialsCanvas.height);
+        initialsCtx.fillStyle = "#fff";
+        initialsCtx.fillRect(0, 0, initialsCanvas.width, initialsCanvas.height);
+    }
+
+    // Build initials string from full name — e.g. "Lloyd Toralba" → "L.T."
+    function buildInitials(fullName) {
+        return fullName
+            .trim()
+            .split(/\s+/)
+            .filter(w => w.length > 0)
+            .map(w => w[0].toUpperCase())
+            .join(".") + ".";
+    }
+
     function renderTypeSignature() {
         clearTypeCanvas();
+        clearInitialsCanvas();
+
         const text = sigTextInput.value.trim();
         if (!text) return;
+
+        // Full signature
         typeCtx.fillStyle = "#fff";
         typeCtx.fillRect(0, 0, typeCanvas.width, typeCanvas.height);
         typeCtx.fillStyle = "#1a1a2e";
@@ -1077,6 +1200,16 @@ function showToast(message, type = "info") {
         typeCtx.textAlign = "center";
         typeCtx.textBaseline = "middle";
         typeCtx.fillText(text, typeCanvas.width / 2, typeCanvas.height / 2);
+
+        // Initials — same font, sized to fit the smaller canvas
+        const initials = buildInitials(text);
+        initialsCtx.fillStyle = "#fff";
+        initialsCtx.fillRect(0, 0, initialsCanvas.width, initialsCanvas.height);
+        initialsCtx.fillStyle = "#1a1a2e";
+        initialsCtx.font = `52px '${selectedFont}', cursive`;
+        initialsCtx.textAlign = "center";
+        initialsCtx.textBaseline = "middle";
+        initialsCtx.fillText(initials, initialsCanvas.width / 2, initialsCanvas.height / 2);
     }
 
     sigTextInput.addEventListener("input", renderTypeSignature);
@@ -1105,7 +1238,10 @@ function showToast(message, type = "info") {
                 showToast("Please type your name", "error");
                 return;
             }
-            signatureData = typeCanvas.toDataURL("image/png");
+            // Use whichever preview card the signer selected
+            signatureData = (selectedTypeMode === "initials")
+                ? initialsCanvas.toDataURL("image/png")
+                : typeCanvas.toDataURL("image/png");
         }
 
         btnConfirm.disabled = true;
@@ -1170,8 +1306,15 @@ function showToast(message, type = "info") {
         document.querySelector("#review-signature-modal .sig-tab[data-tab='draw']").classList.add("active");
         document.getElementById("review-sig-tab-draw").classList.remove("hidden");
         document.getElementById("review-sig-tab-type").classList.add("hidden");
+
+        // Reset type mode to Full Signature
+        selectedTypeMode = "full";
+        document.querySelectorAll("#review-signature-modal .sig-preview-card").forEach(c => c.classList.remove("active"));
+        document.getElementById("sig-preview-card-full").classList.add("active");
+
         clearDrawCanvas();
         clearTypeCanvas();
+        clearInitialsCanvas();
         sigTextInput.value = "";
         modal.classList.remove("hidden");
     };

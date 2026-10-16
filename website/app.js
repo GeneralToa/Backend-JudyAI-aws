@@ -2064,11 +2064,14 @@ ${obligations.length ? obligations.map(o => `
         const signatureModalConfirm = document.getElementById("signature-modal-confirm");
         const drawCanvas = document.getElementById("signature-canvas");
         const typeCanvas = document.getElementById("signature-type-canvas");
+        const initialsCanvas = document.getElementById("signature-initials-canvas");
         const drawCtx = drawCanvas.getContext("2d");
         const typeCtx = typeCanvas.getContext("2d");
+        const initialsCtx = initialsCanvas.getContext("2d");
         let isDrawing = false;
         let activeTab = "draw";
         let selectedFont = "Dancing Script";
+        let selectedTypeMode = "full";  // "full" | "initials"
 
         function openSignatureModal(contractId, filename) {
             selectedContractId = contractId;
@@ -2084,8 +2087,15 @@ ${obligations.length ? obligations.map(o => `
             if (nameEl)  nameEl.value  = "";
             if (titleEl) titleEl.value = "";
 
+            // Reset type mode to Full Signature
+            selectedTypeMode = "full";
+            document.querySelectorAll("#signature-modal .sig-preview-card").forEach(c => c.classList.remove("active"));
+            const fullCard = document.getElementById("sig-preview-card-full");
+            if (fullCard) fullCard.classList.add("active");
+
             clearDrawCanvas();
             clearTypeCanvas();
+            clearInitialsCanvas();
             signatureModal.classList.remove("hidden");
         }
 
@@ -2100,6 +2110,15 @@ ${obligations.length ? obligations.map(o => `
                 activeTab = tab.dataset.tab;
                 document.getElementById("sig-tab-draw").classList.toggle("hidden", activeTab !== "draw");
                 document.getElementById("sig-tab-type").classList.toggle("hidden", activeTab !== "type");
+            });
+        });
+
+        // Preview card selection (Full Signature vs Initials)
+        document.querySelectorAll("#signature-modal .sig-preview-card").forEach(card => {
+            card.addEventListener("click", () => {
+                document.querySelectorAll("#signature-modal .sig-preview-card").forEach(c => c.classList.remove("active"));
+                card.classList.add("active");
+                selectedTypeMode = card.dataset.mode;
             });
         });
 
@@ -2138,10 +2157,28 @@ ${obligations.length ? obligations.map(o => `
             typeCtx.fillRect(0, 0, typeCanvas.width, typeCanvas.height);
         }
 
+        function clearInitialsCanvas() {
+            initialsCtx.clearRect(0, 0, initialsCanvas.width, initialsCanvas.height);
+            initialsCtx.fillStyle = "#fff";
+            initialsCtx.fillRect(0, 0, initialsCanvas.width, initialsCanvas.height);
+        }
+
+        function buildInitials(fullName) {
+            return fullName
+                .trim()
+                .split(/\s+/)
+                .filter(w => w.length > 0)
+                .map(w => w[0].toUpperCase())
+                .join(".") + ".";
+        }
+
         function renderTypeSignature() {
             clearTypeCanvas();
+            clearInitialsCanvas();
             const text = sigTextInput.value.trim();
             if (!text) return;
+
+            // Full signature
             typeCtx.fillStyle = "#fff";
             typeCtx.fillRect(0, 0, typeCanvas.width, typeCanvas.height);
             typeCtx.fillStyle = "#1a1a2e";
@@ -2149,6 +2186,16 @@ ${obligations.length ? obligations.map(o => `
             typeCtx.textAlign = "center";
             typeCtx.textBaseline = "middle";
             typeCtx.fillText(text, typeCanvas.width / 2, typeCanvas.height / 2);
+
+            // Initials
+            const initials = buildInitials(text);
+            initialsCtx.fillStyle = "#fff";
+            initialsCtx.fillRect(0, 0, initialsCanvas.width, initialsCanvas.height);
+            initialsCtx.fillStyle = "#1a1a2e";
+            initialsCtx.font = `52px '${selectedFont}', cursive`;
+            initialsCtx.textAlign = "center";
+            initialsCtx.textBaseline = "middle";
+            initialsCtx.fillText(initials, initialsCanvas.width / 2, initialsCanvas.height / 2);
         }
 
         sigTextInput.addEventListener("input", renderTypeSignature);
@@ -2173,7 +2220,9 @@ ${obligations.length ? obligations.map(o => `
                     showToast("Please type your name", "error");
                     return;
                 }
-                signatureData = typeCanvas.toDataURL("image/png");
+                signatureData = (selectedTypeMode === "initials")
+                    ? initialsCanvas.toDataURL("image/png")
+                    : typeCanvas.toDataURL("image/png");
             }
 
             signatureModalConfirm.disabled = true;
