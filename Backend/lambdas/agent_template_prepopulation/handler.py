@@ -90,6 +90,9 @@ FIELD_GAP = 0.008           # horizontal gap between label and fill-in box
 DEFAULT_FIELD_WIDTH = 0.30
 MIN_FIELD_WIDTH = 0.08
 ROW_TOLERANCE = 0.012       # lines whose tops differ by less than this share a row
+COLUMN_TOLERANCE = 0.08     # an indented label ("Name:" under "By:") is still the same column
+CAPTION_GAP = 0.004         # a caption sits just under its drawn line
+CHAR_WIDTH = 0.007          # rough printed width of one character, as a share of the page
 
 
 # =============================================================
@@ -523,7 +526,94 @@ def field_box(anchor, row):
 
 
 def label_matches(wanted, line):
-    return line["norm"] == wanted or (len(wanted) > 3 and line["norm"].startswith(wanted))
+    """
+    The line carries this label, exactly or with a qualifier after it.
+
+    "Date" matches "Date (as of):", but "Recipient" does not match "Recipient
+    Name (print)": a prefix only counts when what follows is a bracketed
+    qualifier. On the NDA the looser rule anchored the "RECIPIENT:" heading to
+    the recipient's name line, which then had no line left for its own field.
+    """
+    if line["norm"] == wanted:
+        return True
+    if len(wanted) > 3 and line["norm"].startswith(wanted):
+        return line["norm"][len(wanted):].lstrip().startswith("(")
+    return False
+
+
+def is_caption(label, anchor, page_lines):
+    """
+    A caption printed under its line ("________" with "Signature" below it),
+    rather than a "Label: ____" prefix with the line to its right.
+
+    BDA returns text only - the drawn line is invisible - so this is read from
+    the label and the space around it: no trailing colon, no underscores,
+    nothing else on the row, and blank room directly above where the line and
+    the writing go.
+    """
+    if (label or "").strip().endswith(":") or not anchor["norm"] or "_" in anchor["text"]:
+        return False
+    if len(row_mates(anchor, page_lines)) > 1:
+        return False
+    right = anchor["left"] + anchor["width"]
+    above = [
+        l["top"] + l["height"] for l in page_lines
+        if l["top"] + l["height"] <= anchor["top"]
+        and l["left"] < right + 0.05 and l["left"] + l["width"] > anchor["left"] - 0.05
+    ]
+    return not above or anchor["top"] - max(above) > anchor["height"] * 2.2
+
+
+def caption_box(field_type, anchor, page_lines):
+    """The fill-in box for a caption: on the drawn line above it, centred on the caption."""
+    width = min(max(DEFAULT_FIELD_WIDTH, anchor["width"] + 0.04), 0.96)
+    centre = anchor["left"] + anchor["width"] / 2
+    x = max(0.02, min(centre - width / 2, 0.98 - width))
+
+    height = FIELD_HEIGHT.get(field_type, DEFAULT_FIELD_HEIGHT)
+    above = [
+        l["top"] + l["height"] for l in page_lines
+        if l["top"] + l["height"] <= anchor["top"]
+        and l["left"] < x + width and l["left"] + l["width"] > x
+    ]
+    if above:
+        room = anchor["top"] - CAPTION_GAP - max(above)
+        height = max(min(height, room * 0.9), anchor["height"])
+    y = max(0.0, anchor["top"] - CAPTION_GAP - height)
+
+    return {
+        "x": round(x, 4),
+        "y": round(y, 4),
+        "width": round(width, 4),
+        "height": round(height, 4),
+    }
+
+
+def extend_wrapped_label(anchor, label, page_lines, used_ids):
+    """
+    Follow a label that wraps inside a narrow table cell to its last line.
+
+    "Title (if any):" in the NDA's company block comes back as three empty-text
+    lines, one under the other. Its fill-in line is printed beside the last of
+    them, so that is the anchor; the lines in between are taken so no other
+    field lands on them.
+    """
+    expected = len(normalise_label(label)) * CHAR_WIDTH
+    covered = anchor["width"]
+    current = anchor
+    while covered < expected * 0.75:
+        below = [
+            l for l in page_lines
+            if l["norm"] == "" and l["id"] not in used_ids and l is not current
+            and abs(l["left"] - current["left"]) < 0.01
+            and 0 < l["top"] - current["top"] < current["height"] * 2
+        ]
+        if not below:
+            break
+        current = min(below, key=lambda l: l["top"])
+        used_ids.add(current["id"])
+        covered += current["width"] + CHAR_WIDTH
+    return current
 
 
 class Placement:
@@ -649,6 +739,7 @@ def locate_field(field, placement, allow_fallback=True):
     if anchor is None and not allow_fallback:
         return None
 
+    fallback = False
     if anchor is None:
         previous = placement.last_anchor.get(role_key)
         if previous is not None:
@@ -657,10 +748,14 @@ def locate_field(field, placement, allow_fallback=True):
                 if l["norm"] == "" and l["id"] not in placement.used_ids
                 and previous["top"] < l["top"] < previous["top"] + 0.15
             ]
-            same_column = [l for l in empties if abs(l["left"] - previous["left"]) < 0.03]
+            # The column test allows for indented labels: on the NDA "Name:" sits
+            # indented under "By:", and a tighter test skipped it for the next
+            # party's heading further down.
+            same_column = [l for l in empties if abs(l["left"] - previous["left"]) < COLUMN_TOLERANCE]
             pool = same_column or empties
             if pool:
                 anchor = min(pool, key=lambda l: l["top"])
+                fallback = True
             else:
                 # Nothing below: the nearest unused empty line in this party's
                 # column anywhere on the page (a party-name cell at the top of
@@ -673,22 +768,28 @@ def locate_field(field, placement, allow_fallback=True):
                 ]
                 if same_column:
                     anchor = min(same_column, key=lambda l: abs(l["top"] - previous["top"]))
+                    fallback = True
 
     if anchor is None:
         return None
 
     placement.used_ids.add(anchor["id"])
+    if fallback:
+        anchor = extend_wrapped_label(anchor, field["label"], page_lines, placement.used_ids)
     placement.last_anchor[role_key] = anchor
     # A party whose heading BDA could not read is pinned to the column of its
     # first placed field, so the rest of its fields stay on the same side.
     if placement.column_x.get(role_key) is None:
         placement.column_x[role_key] = anchor["left"]
     field["_anchor"] = anchor
-    return box_from_anchor(field["field_type"], anchor, page_lines)
+    return box_from_anchor(field["field_type"], anchor, page_lines, field["label"])
 
 
-def box_from_anchor(field_type, anchor, page_lines):
+def box_from_anchor(field_type, anchor, page_lines, label=None):
     """The fill-in box for a field whose label sits on the given BDA line."""
+    if is_caption(label, anchor, page_lines):
+        return caption_box(field_type, anchor, page_lines)
+
     row = row_mates(anchor, page_lines)
     x, width = field_box(anchor, row)
     height = FIELD_HEIGHT.get(field_type, DEFAULT_FIELD_HEIGHT)
@@ -772,7 +873,7 @@ def mirror_missing_fields(fields, placement):
             **{k: v for k, v in field.items() if k != "_anchor"},
             "signer_role": other_role,
             "column": "left" if twin["left"] < anchor["left"] else "right",
-            "position": box_from_anchor(field["field_type"], twin, page_lines),
+            "position": box_from_anchor(field["field_type"], twin, page_lines, field["label"]),
             "_anchor": twin,
         })
     return mirrored
@@ -814,6 +915,13 @@ def normalise_field(item):
     if not label:
         print(f"Dropping field without a label: {item}")
         return None
+
+    # A person's name line is a name field however the model typed it. On the NDA
+    # "Recipient Name (print)" came back as full_name in one run and text in the
+    # next, and the signed copy only stamps names into full_name fields.
+    if field_type == "text" and re.search(r"\bname\b", label, re.IGNORECASE) \
+            and not re.search(r"compan|entity|business|organi[sz]ation", label, re.IGNORECASE):
+        field_type = "full_name"
 
     page = item.get("page")
     try:
