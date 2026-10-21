@@ -6,3 +6,4 @@ terraform.tfstate.backup
 __pycache__/
 *.pyc
 .kiro/
+function.zip
