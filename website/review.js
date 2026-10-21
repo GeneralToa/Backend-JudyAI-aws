@@ -839,7 +839,11 @@ function renderSignerRows(count) {
         row.innerHTML = `
             <div style="display:flex;align-items:center;gap:8px;width:100%">
                 <div style="flex:1">
-                    <label>Signer ${i}</label>
+                    <label>Signer ${i} Name <span style="color:#aaa;font-weight:400;font-size:0.8rem">(optional)</span></label>
+                    <input type="text" class="input-field signer-name-input" placeholder="Full name" data-index="${i}">
+                </div>
+                <div style="flex:1">
+                    <label>Signer ${i} Email</label>
                     <input type="email" class="input-field signer-email-input" placeholder="email@example.com" data-index="${i}">
                 </div>
                 <div style="width:130px">
@@ -860,12 +864,15 @@ function renderSignerRows(count) {
         btn.addEventListener("click", () => {
             const currentCount = form.querySelectorAll(".signer-row").length;
             if (currentCount <= 1) return;
+            const names  = [...form.querySelectorAll(".signer-name-input")].map(i => i.value);
             const emails = [...form.querySelectorAll(".signer-email-input")].map(i => i.value);
             const roles  = [...form.querySelectorAll(".signer-role-select")].map(s => s.value);
             const idx = parseInt(btn.dataset.index) - 1;
+            names.splice(idx, 1);
             emails.splice(idx, 1);
             roles.splice(idx, 1);
             renderSignerRows(currentCount - 1);
+            form.querySelectorAll(".signer-name-input").forEach((inp, i) => { inp.value = names[i] || ""; });
             form.querySelectorAll(".signer-email-input").forEach((inp, i) => { inp.value = emails[i] || ""; });
             form.querySelectorAll(".signer-role-select").forEach((sel, i) => { sel.value = roles[i] || SIGNER_ROLES[i] || "supplier"; });
         });
@@ -884,9 +891,11 @@ function openRouteModal(contractId, contractName) {
             const form = document.getElementById("signers-form");
             const currentCount = form.querySelectorAll(".signer-row").length;
             if (currentCount >= MAX_SIGNERS) return;
+            const names  = [...form.querySelectorAll(".signer-name-input")].map(i => i.value);
             const emails = [...form.querySelectorAll(".signer-email-input")].map(i => i.value);
             const roles  = [...form.querySelectorAll(".signer-role-select")].map(s => s.value);
             renderSignerRows(currentCount + 1);
+            form.querySelectorAll(".signer-name-input").forEach((inp, i) => { inp.value = names[i] || ""; });
             form.querySelectorAll(".signer-email-input").forEach((inp, i) => { inp.value = emails[i] || ""; });
             form.querySelectorAll(".signer-role-select").forEach((sel, i) => { sel.value = roles[i] || SIGNER_ROLES[i] || "supplier"; });
         };
@@ -899,10 +908,12 @@ function openRouteModal(contractId, contractName) {
         const form = document.getElementById("signers-form");
         const emailInputs = [...form.querySelectorAll(".signer-email-input")];
         const roleSelects = [...form.querySelectorAll(".signer-role-select")];
+        const nameInputs  = [...form.querySelectorAll(".signer-name-input")];
 
         const signers = emailInputs.map((inp, i) => ({
             email: inp.value.trim(),
             role: roleSelects[i]?.value || "supplier",
+            name: nameInputs[i]?.value.trim() || "",
         }));
 
         if (signers.some(s => !s.email)) {

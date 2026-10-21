@@ -327,6 +327,7 @@ def handle_route_contract(contract_id, user_email, event):
             signer_role=signer.get("role", ""),
             contract_name=contract_name,
             contract_id=contract_id,
+            signer_name=signer.get("name", "").strip() or None,
         )
 
     return response(200, {
@@ -1110,6 +1111,7 @@ def _stamp_pdf_page_direct(pdf_bytes, page_idx, fields_on_page, signers_rows,
                 font_size = max(8, int(stamp_h_pt * 0.7))
                 c.setFont(overlay_font, font_size)
                 c.setFillColorRGB(20 / 255, 20 / 255, 40 / 255)
+                # Align text just above the underline (bottom of field box)
                 c.drawString(stamp_x_pt, stamp_y_pt + stamp_h_pt * 0.15, text)
 
     c.save()
@@ -1387,10 +1389,11 @@ def _strip_html(html):
     return re.sub(r"<[^>]+>", "", html).strip()
 
 
-def notify_signer_assigned(signer_email, signer_role, contract_name, contract_id):
+def notify_signer_assigned(signer_email, signer_role, contract_name, contract_id, signer_name=None):
     """Notify a signer that a contract has been assigned to them."""
     contracts_url = f"{APP_URL}/index.html?section=contracts"
     subject = f"Action required: Contract sent to you for signature"
+    greeting = f"Hi {signer_name}," if signer_name else "Hello,"
     html = f"""
     <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#1a1a2e">
         <div style="background:#7c4dff;padding:24px 32px;border-radius:8px 8px 0 0">
@@ -1399,7 +1402,7 @@ def notify_signer_assigned(signer_email, signer_role, contract_name, contract_id
         <div style="background:#f9f9ff;padding:32px;border-radius:0 0 8px 8px;border:1px solid #e0e0e0">
             <h2 style="font-size:18px;margin:0 0 12px">You have a contract to sign</h2>
             <p style="color:#444;line-height:1.6">
-                A contract has been sent to you for signature as <strong>{signer_role}</strong>.
+                {greeting} A contract has been sent to you for signature as <strong>{signer_role}</strong>.
             </p>
             <div style="background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:14px 18px;margin:16px 0">
                 <strong style="font-size:0.9rem">{contract_name}</strong>
