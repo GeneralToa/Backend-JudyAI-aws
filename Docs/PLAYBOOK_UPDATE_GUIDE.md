@@ -128,7 +128,7 @@ action counts against what the author changed.
 | `No metadata for section '…' - using defaults` | A new section. Add it to `SECTION_METADATA` in `build_rules.py` with a stable id (lower case, underscores) and its contract types, then re-run B1 |
 | `unrecognized marker {…}` | An instruction in braces the converter doesn't know. Ask the author to use one from A3, or add the phrase to `ACTION_MARKERS` |
 | `no triggers parsed` / `no actions parsed` | The row doesn't follow the A2/A3 layout. Usually it's missing quotation marks, a missing **Because**, or a missing brace |
-| `confirmed correction no longer matches the source` | The new document already contains one of the confirmed typo fixes. Harmless; the entry in `CLIENT_CONFIRMED_CORRECTIONS` can be removed |
+| `confirmed correction no longer matches the source` / `typo correction no longer matches the source` | The new document already contains one of the typo fixes. Harmless; the entry in `CLIENT_CONFIRMED_CORRECTIONS` or `TYPO_CORRECTIONS` can be removed |
 
 ### B3. Check the wording
 

@@ -141,6 +141,30 @@ CLIENT_CONFIRMED_CORRECTIONS = (
     ("othewise", "otherwise"),
 )
 
+# Obvious typing errors corrected on 21 Oct 2026 without waiting for a reply: a
+# dropped or extra letter ("o" for "or"/"of", "his" for "this", "lik" for "link")
+# in wording that is otherwise unchanged. They were the second-round list sent to
+# the client on 2 Oct, and the client is told about each one, so any can be
+# reverted. Anything beyond a typing error still needs the client's written word.
+TYPO_CORRECTIONS = (
+    ("[company] other wise", "[company] otherwise"),
+    ("and y privacy", "any privacy"),
+    ("contemplated by his agreement", "contemplated by this agreement"),
+    ("prior to o independent", "prior to or independent"),
+    ("Hower,", "However,"),
+    ("consulting o training", "consulting or training"),
+    ("give o provide", "give or provide"),
+    ("to provide the severs", "to provide the Services"),  # beside "Deliverables or goods"
+    ("described herin", "described herein"),
+    ("completion of the Servies", "completion of the Services"),
+    ("placed o blogs", "placed on blogs"),
+    ("keywording stuffing", "keyword stuffing"),
+    ("buil or places by supplier", "built or placed by supplier"),
+    ("that the lik be removed", "that the link be removed"),
+    ("distribution o contact list", "distribution of contact list"),
+    ("shall be the considered the", "shall be considered the"),
+)
+
 
 def cell_text(tc):
     """All non-empty paragraphs in a table cell, in order."""
@@ -358,16 +382,16 @@ def parse_actions(paragraphs):
     return actions, unmatched_markers
 
 
-def apply_confirmed_corrections(rows):
-    """Apply CLIENT_CONFIRMED_CORRECTIONS to every paragraph. Returns (rows, applied, warnings)."""
-    counts = {wrong: 0 for wrong, _ in CLIENT_CONFIRMED_CORRECTIONS}
+def apply_confirmed_corrections(rows, pairs=CLIENT_CONFIRMED_CORRECTIONS, kind="confirmed"):
+    """Apply (wrong, right) pairs to every paragraph. Returns (rows, applied, warnings)."""
+    counts = {wrong: 0 for wrong, _ in pairs}
     corrected = []
     for row in rows:
         new_row = []
         for cell in row:
             new_cell = []
             for para in cell:
-                for wrong, right in CLIENT_CONFIRMED_CORRECTIONS:
+                for wrong, right in pairs:
                     if wrong in para:
                         counts[wrong] += para.count(wrong)
                         para = para.replace(wrong, right)
@@ -375,14 +399,16 @@ def apply_confirmed_corrections(rows):
             new_row.append(new_cell)
         corrected.append(new_row)
     applied = [{"from": wrong, "to": right, "occurrences": counts[wrong]}
-               for wrong, right in CLIENT_CONFIRMED_CORRECTIONS if counts[wrong]]
-    warnings = [f"confirmed correction no longer matches the source: {wrong!r}"
-                for wrong, _ in CLIENT_CONFIRMED_CORRECTIONS if not counts[wrong]]
+               for wrong, right in pairs if counts[wrong]]
+    warnings = [f"{kind} correction no longer matches the source: {wrong!r}"
+                for wrong, _ in pairs if not counts[wrong]]
     return corrected, applied, warnings
 
 
 def build(docx_path):
     rows, corrections, warnings = apply_confirmed_corrections(read_table(docx_path))
+    rows, typo_fixes, typo_warnings = apply_confirmed_corrections(rows, TYPO_CORRECTIONS, kind="typo")
+    warnings += typo_warnings
     header, body_rows = rows[0], rows[1:]
 
     rules = []
@@ -433,6 +459,10 @@ def build(docx_path):
             "confirmed_by": "Eean Patterson, email of 2 Oct 2026",
             "applied": corrections,
         },
+        "typo_corrections": {
+            "decided_by": "Zuhair Qadir (AI engineer), 21 Oct 2026 - obvious typing errors, client informed",
+            "applied": typo_fixes,
+        },
         "rule_count": len(rules),
         "rules": rules,
     }, warnings
@@ -446,25 +476,10 @@ def report_quality_issues(document):
     contract wording, so the client should confirm the intended text rather than
     have us edit their legal language.
     """
-    # Not yet confirmed by the client (the ten sent on 16 Sep are corrected above).
-    suspects = [
-        ("contemplated by his agreement", "likely 'this agreement'"),
-        ("prior to o independent", "likely 'prior to or independent'"),
-        ("Hower,", "likely 'However,'"),
-        ("consulting o training", "likely 'consulting or training'"),
-        ("give o provide", "likely 'give or provide'"),
-        ("to provide the severs", "likely 'the Services'"),
-        ("[company] other wise", "likely 'otherwise'"),
-        ("and y privacy", "likely 'any privacy'"),
-        ("described herin", "likely 'herein'"),
-        ("completion of the Servies", "likely 'Services'"),
-        ("not be placed o blogs", "likely 'placed on blogs'"),
-        ("keywording stuffing", "likely 'keyword stuffing'"),
-        ("buil or places by supplier", "likely 'built or placed'"),
-        ("that the lik be removed", "likely 'the link'"),
-        ("distribution o contact list", "likely 'distribution of contact lists'"),
-        ("shall be the considered the", "likely 'shall be considered the'"),
-    ]
+    # Wording still to confirm with the client. Empty since 21 Oct 2026: the ten
+    # sent on 16 Sep are in CLIENT_CONFIRMED_CORRECTIONS and the sixteen sent on
+    # 2 Oct in TYPO_CORRECTIONS. Add new suspects here as (text, suggestion).
+    suspects = []
 
     found = []
     for rule in document["rules"]:
