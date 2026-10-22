@@ -92,6 +92,7 @@ MIN_FIELD_WIDTH = 0.08
 ROW_TOLERANCE = 0.012       # lines whose tops differ by less than this share a row
 COLUMN_TOLERANCE = 0.08     # an indented label ("Name:" under "By:") is still the same column
 CAPTION_GAP = 0.004         # a caption sits just under its drawn line
+CAPTION_ROOM = 0.016        # blank height above a caption that holds its line and the writing
 CHAR_WIDTH = 0.007          # rough printed width of one character, as a share of the page
 
 
@@ -475,6 +476,9 @@ def load_text_lines(raw_output_s3_key):
 def index_text_lines(document):
     """Group a BDA standard-output document's text_lines by 1-indexed page."""
     by_page = {}
+    # Word files are rasterised by BDA and their drawn lines vanish, so captions
+    # printed under a line look stranded; caption detection is looser for them.
+    word = str((document.get("metadata") or {}).get("file_type") or "").upper() == "DOCX"
     for line in document.get("text_lines", []):
         locations = line.get("locations") or []
         if not locations:
@@ -491,6 +495,7 @@ def index_text_lines(document):
             "top": float(box["top"]),
             "width": float(box["width"]),
             "height": float(box["height"]),
+            "word": word,
         })
 
     for lines in by_page.values():
@@ -541,34 +546,84 @@ def label_matches(wanted, line):
     return False
 
 
+def caption_like(line):
+    """
+    Printed text that reads as a caption: not empty, no trailing colon, no
+    underscores, and not a bracketed placeholder - "[COMPANY NAME]" is the blank
+    itself, not a caption under one.
+    """
+    text = line["text"].strip()
+    return (bool(line["norm"]) and not text.endswith(":") and "_" not in text
+            and not text.startswith("["))
+
+
 def is_caption(label, anchor, page_lines):
     """
     A caption printed under its line ("________" with "Signature" below it),
     rather than a "Label: ____" prefix with the line to its right.
 
     BDA returns text only - the drawn line is invisible - so this is read from
-    the label and the space around it: no trailing colon, no underscores,
-    nothing else on the row, and blank room directly above where the line and
-    the writing go.
+    the label and the space around it: no trailing colon, no underscores, and
+    blank room directly above where the line and the writing go.
+
+    Word files get a looser reading. The client's Word consent forms draw the
+    line above the caption, put two captions side by side ("Signature of
+    Research Subject" and "Date", each under its own line) and stack rows close
+    together. The native PDF with the same captions types its lines beside the
+    labels instead ("Your Signature______ Date______"), where those boxes
+    belong to the right of the label. Replayed on every stored contract: the
+    looser reading changes only the Word consent forms.
     """
-    if (label or "").strip().endswith(":") or not anchor["norm"] or "_" in anchor["text"]:
+    if (label or "").strip().endswith(":") or not caption_like(anchor):
         return False
-    if len(row_mates(anchor, page_lines)) > 1:
+    word = anchor.get("word", False)
+    row = row_mates(anchor, page_lines)
+    if len(row) > 1 and (not word or any(not caption_like(mate) for mate in row)):
         return False
-    right = anchor["left"] + anchor["width"]
+    left = min(l["left"] for l in row)
+    right = max(l["left"] + l["width"] for l in row)
     above = [
         l["top"] + l["height"] for l in page_lines
         if l["top"] + l["height"] <= anchor["top"]
-        and l["left"] < right + 0.05 and l["left"] + l["width"] > anchor["left"] - 0.05
+        and l["left"] < right + 0.05 and l["left"] + l["width"] > left - 0.05
     ]
-    return not above or anchor["top"] - max(above) > anchor["height"] * 2.2
+    room = max(CAPTION_ROOM, anchor["height"] * 1.2) if word else anchor["height"] * 2.2
+    return not above or anchor["top"] - max(above) > room
+
+
+def left_aligned_caption(anchor, page_lines):
+    """
+    True when the captions in this block start at the same x as their lines
+    (consent forms), rather than sitting centred under them (the NDA). Read
+    from a caption a row or two above or below that starts where this one does.
+    """
+    return any(
+        l is not anchor and caption_like(l)
+        and abs(l["left"] - anchor["left"]) < 0.012
+        and ROW_TOLERANCE < abs(l["top"] - anchor["top"]) < 0.12
+        for l in page_lines
+    )
 
 
 def caption_box(field_type, anchor, page_lines):
-    """The fill-in box for a caption: on the drawn line above it, centred on the caption."""
-    width = min(max(DEFAULT_FIELD_WIDTH, anchor["width"] + 0.04), 0.96)
-    centre = anchor["left"] + anchor["width"] / 2
-    x = max(0.02, min(centre - width / 2, 0.98 - width))
+    """
+    The fill-in box for a caption: on the drawn line above it.
+
+    Captions that share a row each start their own line, so the box runs from
+    the caption to the next caption on the row. A caption alone on its row is
+    either left-aligned with its line or centred under it, read from the other
+    captions in the block.
+    """
+    mates = [l["left"] for l in row_mates(anchor, page_lines)
+             if l is not anchor and l["left"] > anchor["left"]]
+    if mates or len(row_mates(anchor, page_lines)) > 1 or left_aligned_caption(anchor, page_lines):
+        x = anchor["left"]
+        width = (min(mates) - FIELD_GAP - x) if mates else max(DEFAULT_FIELD_WIDTH, anchor["width"] + 0.04)
+        width = max(MIN_FIELD_WIDTH, min(width, 0.98 - x))
+    else:
+        width = min(max(DEFAULT_FIELD_WIDTH, anchor["width"] + 0.04), 0.96)
+        centre = anchor["left"] + anchor["width"] / 2
+        x = max(0.02, min(centre - width / 2, 0.98 - width))
 
     height = FIELD_HEIGHT.get(field_type, DEFAULT_FIELD_HEIGHT)
     above = [
