@@ -140,7 +140,7 @@ lambda:
     handler: "handler.lambda_handler"
     runtime: "python3.13"
     timeout: 120
-    memorySize: 512
+    memorySize: 1024
     vpcConfig: false
     lambdaLayer:
       enabled: true
