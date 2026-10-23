@@ -5,7 +5,7 @@
 | Scope | The AI workstream of the SOW: document text extraction, the four AI agents, the AI data model and the AI API |
 | Audience | Administrators who deploy, configure and operate the Judy AI environment |
 | Environment | AWS account `580118073904`, region `us-west-2`, resource prefix `rag-app-prod` |
-| Version | 1.5, 3 October 2026. Values read from the live environment on 1 and 2 October. 1.1: extraction batch handling and rules packaging fixed. 1.2: per-user access on the AI API. 1.3: all three live; DLQ retention 14 days. 1.4: client-confirmed playbook corrections; risk-flagged email trigger. 1.5: CloudWatch alarms in place. |
+| Version | 1.6, 22 October 2026. Values read from the live environment on 1 and 2 October. 1.1: extraction batch handling and rules packaging fixed. 1.2: per-user access on the AI API. 1.3: all three live; DLQ retention 14 days. 1.4: client-confirmed playbook corrections; risk-flagged email trigger. 1.5: CloudWatch alarms in place. 1.6: sixteen playbook typing errors corrected; field placement and blank-check limits. |
 | Related | Infrastructure and application chapters of this reference; the API contract in [`AI_AGENTS_API.md`](AI_AGENTS_API.md) |
 
 This chapter is part of the single administrator reference document the SOW requires
@@ -265,11 +265,17 @@ the upload as in 6.2. Common causes are in section 7.
 
 ### 6.4 Update the playbook
 
-The playbook is Judy's legal content; its wording is copied verbatim. The only exceptions are
-corrections Judy has confirmed in writing: they are listed in `CLIENT_CONFIRMED_CORRECTIONS` in
-`build_rules.py`, applied before parsing, and recorded in `playbook_rules.json` under
-`client_confirmed_corrections` (ten, confirmed by Eean Patterson on 2 October 2026). The
-converter warns if a correction stops matching a reissued playbook.
+The playbook is Judy's legal content; its wording is copied verbatim. There are two lists of
+exceptions in `build_rules.py`, both applied before parsing and recorded in `playbook_rules.json`:
+
+- `CLIENT_CONFIRMED_CORRECTIONS` (`client_confirmed_corrections`): ten corrections confirmed in
+  writing by Eean Patterson on 2 October 2026.
+- `TYPO_CORRECTIONS` (`typo_corrections`): sixteen obvious typing errors corrected on 21 October
+  2026, such as "distribution o contact list" → "distribution of contact list". Removing an entry
+  restores the original wording.
+
+The converter warns if a correction stops matching a reissued playbook. Any other change to the
+wording needs Judy's written confirmation.
 
 1. `python Backend/playbook/build_rules.py path/to/new_playbook.docx` regenerates
    `Backend/playbook/playbook_rules.json` and the agent's copy beside its handler, and reports
@@ -400,6 +406,12 @@ From the SOW and the client's decisions:
 - Template pre-population recognises three types: MSA, purchase agreement and SOW (16 Sep
   2026). Other documents are reported as "not one of the three types" and still get their
   fields placed. Purchase agreement and SOW recognition are untested until samples arrive.
+- Field boxes are placed from the labels printed on the page, never guessed. A signature block
+  whose labels come back from extraction without text gets no box; its signer still signs and is
+  listed on the signed copy's audit page.
+- The risk analysis does not check for blanks left unfilled or placeholders such as
+  "[COMPANY NAME]". Incomplete documents are corrected by the uploader and uploaded again (client
+  decision, 14 October 2026).
 - Obligations are extracted only where clearly stated; dates are never inferred.
 - Results can vary slightly between runs on borderline items; each run is stored with its model,
   prompt version and raw output.

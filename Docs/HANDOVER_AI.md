@@ -61,7 +61,7 @@ Good to know:
 | Daily health | CloudWatch | Alarms email the team on any AI function error or a document stuck in the dead-letter queue. Replace the team's addresses with Judy's own (SNS topic `rag-app-prod-alarms`) and confirm them with `--authenticate-on-unsubscribe true`. |
 | A document that failed | SQS dead-letter queue (14 days) | Read the error in the extraction log, fix the cause, redrive the message. Admin reference §6.3. |
 | Re-running analysis | The API (`POST /contracts/{id}/analysis`) | For one contract or one agent. Re-runs never send emails. Admin reference §6.2. |
-| Updating the playbook | `Backend/playbook/build_rules.py` | Regenerate the rules, run the two checks, deploy. Only wording Judy confirms in writing is ever corrected. Admin reference §6.4. |
+| Updating the playbook | `Backend/playbook/build_rules.py` | Regenerate the rules, run the two checks, deploy. The wording is never changed, except for corrections Judy confirmed in writing and sixteen obvious typing errors, each listed and reversible. Admin reference §6.4. |
 | Changing the AI model | `MODEL_ID` on the agent functions | Any Bedrock inference profile ID; the permissions already allow other models. Run the evaluators before and after. Admin reference §6.5. |
 | Cost | Bedrock usage on Judy's bill | About $0.05 of model use plus about $0.08 of extraction per contract, at list prices. |
 | Limits | SOW | Text-based PDF and Word up to 20 pages / 10 MB; three template types (MSA, purchase agreement, SOW); no OCR or handwriting. |
