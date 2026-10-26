@@ -1,10 +1,10 @@
 """
 Offline checks for how document_extraction handles an SQS batch.
 
-No AWS calls: process_document and the SQS client are replaced with fakes, so
-this tests only the batch logic - parallel processing, isolation of a failing
-upload, and deleting the successes before the invocation fails so only the
-failed upload is retried.
+No AWS calls: process_document and the SQS and S3 clients are replaced with
+fakes, so this tests only the batch logic - parallel processing, isolation of a
+failing upload, and deleting the successes before the invocation fails so only
+the failed upload is retried - and how file names BDA refuses are handled.
 
 Usage:
     python test_extraction_batch.py
@@ -12,6 +12,7 @@ Usage:
 
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -116,6 +117,42 @@ check("encoded key decoded", objs == [(BUCKET, "uploads/d/Mutual NDA_Template.do
 
 # 6. Queue URL from ARN
 check("queue URL built from the ARN", handler.queue_url_from_arn(QUEUE_ARN) == QUEUE_URL, handler.queue_url_from_arn(QUEUE_ARN))
+
+
+# 7. File names BDA refuses are extracted from a renamed copy
+class FakeS3:
+    def __init__(self):
+        self.copies = []
+
+    def copy_object(self, Bucket, Key, CopySource):
+        self.copies.append((CopySource["Bucket"], CopySource["Key"], Bucket, Key))
+
+
+# BDA's own validation pattern for inputConfiguration.s3Uri, copied from its error message.
+BDA_URI = re.compile(r"s3://[a-z0-9][\.\-a-z0-9]{1,61}[a-z0-9](/[^\x00-\x1F\x7F\{^}%`\]\">\[~<#|]*)?")
+CID = "1e6a673f-7af5-47eb-ba32-184b76ad34f1"
+OUT = os.environ["BDA_OUTPUT_BUCKET"]
+
+handler.s3_client = FakeS3()
+plain = handler.bda_input_location(BUCKET, "uploads/d/Mutual NDA_Template (v2).docx", CID)
+check("normal name: BDA reads the upload itself, no copy",
+      plain == (BUCKET, "uploads/d/Mutual NDA_Template (v2).docx") and handler.s3_client.copies == [],
+      (plain, handler.s3_client.copies))
+
+eean = "uploads/824efddd-566c-4aa5-a50f-a0961fc958f3/}[Judefly][Vendor Agreement].docx"
+check("the failing upload's key is refused by BDA's pattern", not BDA_URI.fullmatch(f"s3://{BUCKET}/{eean}"))
+loc = handler.bda_input_location(BUCKET, eean, CID)
+check("bracketed name: copied to a safe name under the BDA output prefix",
+      loc == (OUT, f"bda-output/input/{CID}/__Judefly__Vendor Agreement_.docx"), loc)
+check("bracketed name: copy made from the original upload",
+      handler.s3_client.copies == [(BUCKET, eean, OUT, loc[1])], handler.s3_client.copies)
+check("bracketed name: the copy's URI passes BDA's pattern", bool(BDA_URI.fullmatch(f"s3://{loc[0]}/{loc[1]}")), loc)
+check("bracketed name: the copy is not under uploads/ (no re-trigger)", not loc[1].startswith("uploads/"), loc)
+
+every = "uploads/e/a{b}c^d%e`f[g]h\"i<j>k~l#m|n\x01o\x7fp.pdf"
+loc = handler.bda_input_location(BUCKET, every, CID)
+check("every refused character replaced, extension kept",
+      BDA_URI.fullmatch(f"s3://{loc[0]}/{loc[1]}") is not None and loc[1].endswith(".pdf"), loc)
 
 print(f"\n{sum(results)}/{len(results)} checks passed")
 sys.exit(0 if all(results) else 1)
