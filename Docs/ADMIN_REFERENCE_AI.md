@@ -5,7 +5,7 @@
 | Scope | The AI workstream of the SOW: document text extraction, the four AI agents, the AI data model and the AI API |
 | Audience | Administrators who deploy, configure and operate the Judy AI environment |
 | Environment | AWS account `580118073904`, region `us-west-2`, resource prefix `rag-app-prod` |
-| Version | 1.6, 22 October 2026. Values read from the live environment on 1 and 2 October. 1.1: extraction batch handling and rules packaging fixed. 1.2: per-user access on the AI API. 1.3: all three live; DLQ retention 14 days. 1.4: client-confirmed playbook corrections; risk-flagged email trigger. 1.5: CloudWatch alarms in place. 1.6: sixteen playbook typing errors corrected; field placement and blank-check limits. |
+| Version | 1.7, 26 October 2026. Values checked against the live environment on 26 October. 1.1: extraction batch handling and rules packaging fixed. 1.2: per-user access on the AI API. 1.3: all three live; DLQ retention 14 days. 1.4: client-confirmed playbook corrections; risk-flagged email trigger. 1.5: CloudWatch alarms in place. 1.6: sixteen playbook typing errors corrected; field placement and blank-check limits. 1.7: re-checked live; signed copy and field boxes (6.8); file names BDA refuses are extracted from a renamed copy; log retention. |
 | Related | Infrastructure and application chapters of this reference; the API contract in [`AI_AGENTS_API.md`](AI_AGENTS_API.md) |
 
 This chapter is part of the single administrator reference document the SOW requires
@@ -58,8 +58,9 @@ come from the page layout BDA measured, never from the model; dates are never ca
 
 ### 2.1 Lambda functions
 
-All functions: Python 3.13, no VPC (database access is through the RDS Data API), log group
-`/aws/lambda/<function name>` with 30-day retention, one IAM role each.
+All functions: Python 3.13, no VPC (database access is through the RDS Data API), one IAM role
+each, log group `/aws/lambda/<function name>`. These log groups have no retention period set, so
+logs are kept until deleted (section 9).
 
 | Function | Trigger | Memory | Timeout | Role |
 |---|---|---|---|---|
@@ -74,7 +75,7 @@ All functions: Python 3.13, no VPC (database access is through the RDS Data API)
 
 | Resource | Name / location | Notes |
 |---|---|---|
-| Upload bucket | `rag-app-prod-landing-zone-580118073904-us-west-2-an` | Only the `uploads/` prefix triggers processing. BDA output is written under `bda-output/`. SSE (AES-256), public access blocked. |
+| Upload bucket | `rag-app-prod-landing-zone-580118073904-us-west-2-an` | Only the `uploads/` prefix triggers processing. BDA output is written under `bda-output/`, and so are renamed copies of uploads whose names BDA refuses (`bda-output/input/`). SSE (AES-256), public access blocked. |
 | Upload topic | SNS `rag-app-prod-upload-assets-topic` | Raw message delivery is off: queue messages are SNS envelopes, which the extraction code unwraps. |
 | Extraction queue | SQS `rag-app-prod-document-extraction-sqs` | Visibility 360 s, retention 14 days, `maxReceiveCount` 3, encrypted. |
 | Dead-letter queue | SQS `rag-app-prod-document-extraction-sqs-dlq` | Documents that failed extraction three times. Retention 14 days (raised from 1 day on 1 Oct 2026). |
@@ -90,9 +91,9 @@ All functions: Python 3.13, no VPC (database access is through the RDS Data API)
 |---|---|
 | Function source (this is what gets deployed) | `Backend/lambdas/<function>/handler.py` |
 | Playbook converter and rules | `Backend/playbook/build_rules.py` → `Backend/playbook/playbook_rules.json` (the source `.docx` is Judy's document and is kept outside the repository) |
-| Database migrations | `Backend/sql/001_ai_schema.sql`, `002_risk_category_tracked_term.sql` (applied copies in `IaC/2_data/scripts/`) |
+| Database migrations | `Backend/sql/001_ai_schema.sql`, `002_risk_category_tracked_term.sql`, `005_judy_ai_read_contract_signers.sql` (applied copies in `IaC/2_data/scripts/`) |
 | Terraform for the functions | `IaC/6_lambda/` — `config/prod.yaml` (memory, timeout, triggers), `main.tf` (environment variables), `iam.tf` (roles) |
-| Build output | `IaC/6_lambda/functions/<function>/function.zip` (not committed), produced by Terraform's `archive_file` from `Backend/lambdas/<function>/` |
+| Build output | `IaC/6_lambda/functions/<function>/function.zip`, rebuilt by Terraform's `archive_file` from `Backend/lambdas/<function>/` on every plan. Copies are committed, but the source folder is what gets deployed. |
 | Validation tools | `Backend/tests/` (section 6.7) |
 
 ### 2.4 AI API routes
@@ -156,7 +157,7 @@ python Backend/tests/test_playbook_rules_in_sync.py   # the agent ships the curr
 python Backend/tests/test_extraction_batch.py         # extraction batch handling
 ```
 
-Both run offline in seconds and need no AWS credentials. Verified 1 October 2026: the deployed
+Both run offline in seconds and need no AWS credentials. Verified 26 October 2026: the deployed
 package contains rules identical to `Backend/playbook/playbook_rules.json`.
 
 ### 4.3 Database changes
@@ -176,7 +177,7 @@ credentials — the AI role cannot change the schema.
    "dry run - agent not invoked". Those rows are expected, not faults.
 3. Re-run analysis on a known contract (section 6.2) and confirm all runs succeed.
 
-As of 1 October 2026 the deployed code of all six AI functions is identical to `main`.
+As of 26 October 2026 the deployed code of all six AI functions is identical to `main`.
 
 ---
 
@@ -320,6 +321,22 @@ Run from `Backend/tests/` with AWS credentials for the account:
 
 The test set is `Backend/tests/corpus/`: eight documents built from Judy's own templates.
 
+### 6.8 A signature in the wrong place on a signed copy
+
+The signed copy stamps each signer's signature, name, title and date into the field boxes from
+template pre-population, exactly as stored. Names, titles and dates are centred in their box. So
+a misplaced stamp is a field-box problem:
+
+1. Check the boxes on the review screen, or in `judy_ai.contract_fields` for the latest run.
+2. If placement code changed, deploy it and re-run template pre-population for the contract
+   (`{"agents": ["templatePrepopulation"]}`, section 6.2).
+3. Rebuild the copy: invoke `rag-app-prod-signature-workflow` asynchronously with
+   `{"action": "generate_signed_copy", "contract_id": "<contract id>"}` (application chapter).
+   The copy always uses the latest template run.
+
+Before shipping a placement change, replay it on the stored contracts and compare old and new
+boxes. A change that looks right on one form can move boxes on another.
+
 ---
 
 ## 7. Troubleshooting
@@ -327,6 +344,7 @@ The test set is `Backend/tests/corpus/`: eight documents built from Judy's own t
 | Symptom | Cause | Fix |
 |---|---|---|
 | Upload succeeds but analysis never starts; message ends in the DLQ with "No app.contracts row" | The application did not create the contract record at upload | Check `/aws/lambda/rag-app-prod-data-upload` for `[WARN] Failed to insert app.contracts row`; fix, then re-trigger (6.2) |
+| Upload never analysed; message in the DLQ; extraction log shows `ValidationException … inputConfiguration.s3Uri` | The file name contains a character BDA refuses in an S3 address: square or curly brackets, `^ % ~ # < > \|`, a double quote or a backtick | Extraction now hands BDA a renamed copy under `bda-output/input/<contract id>/`, so this should not recur. If it does, rename the file and upload it again |
 | Upload "succeeds" but the file never lands in S3 | The presigned upload URL is signed for `Content-Type: application/octet-stream`; any other type gets `403` | Client must send exactly that content type |
 | Extraction `AccessDenied` on `data-automation-profile/us.data-automation-v1` in another region | Cross-region BDA profile | Allow the profile ARN with a wildcard region in the extraction role |
 | Agent fails with `ValidationException … on-demand throughput isn't supported` | `MODEL_ID` is a bare model ID | Use the inference profile ID `us.amazon.nova-pro-v1:0` |
@@ -392,6 +410,7 @@ account.
 | Playbook rules packaging | **Fixed 1 Oct 2026:** the agent's copy is committed, written by `build_rules.py` with the source, and checked by `test_playbook_rules_in_sync.py` | — | AI (done) |
 | Bedrock permission scope | Agent roles may invoke any Bedrock model | **Kept open by decision (2 Oct 2026):** Judy may switch to another model, so the permission is not tied to Nova Pro. Changing models is then a `MODEL_ID` change only (section 6.5). | — |
 | Alarms | **Done 2 Oct 2026:** errors, duration and throttles on all six AI functions and DLQ depth, emailing the team (SNS `rag-app-prod-alarms`) | At handover, replace the team emails with Judy's own | Infrastructure |
+| Log retention | The function log groups keep logs indefinitely. Terraform's 30-day groups (`IaC/6_lambda/cloudwatch.tf`) are named without the `rag-app-prod-` prefix, so they stay empty. | Name them `/aws/lambda/rag-app-prod-<function>` and import the existing groups, or set retention on them directly | Infrastructure |
 | Model quotas | Not load-tested | Bedrock request and token quotas for Nova Pro are the real ceiling under load; check them in Service Quotas before a large batch | Infrastructure |
 
 ---

@@ -41,7 +41,7 @@ Live, on a contract that is already analysed. Open it from **Contracts** to get 
 | A **risk** card | Each risk has a type, a severity, the exact sentence and page it came from. Check the sentence, not just the title. |
 | A risk with a **suggested wording** box | That wording is Judy's own playbook text, word for word. It is advice only; the AI never changes the document. |
 | A **tracked term** | Not a problem — a date or a number the reviewer should see (notice periods, renewal windows, payment deadlines). |
-| The dashed **field boxes** on the signature page | Where each party signs, dates and fills in details. Positions are measured from the page, not guessed. |
+| The dashed **field boxes** on the signature page | Where each party signs, dates and fills in details. Positions are measured from the page, not guessed. The signed copy stamps each signer's signature, name, title and date into these boxes. |
 | **View Analysis → Obligations** on a signed contract | What must happen after signing, who owes it, and the contract's own timing words. A date appears only when the contract writes one out; the AI never calculates dates. |
 | The risk count beside **Send for Signature** | Nobody sends a contract without seeing its risks first. |
 
@@ -82,7 +82,8 @@ Likely ones, with short answers:
 
 ## Before the session
 
-- [ ] A contract already analysed, one already signed (with obligations), and one PDF, so nothing
-      depends on a live upload.
+- [ ] A contract already analysed, one already signed (with obligations and a signed copy), and
+      one PDF, so nothing depends on a live upload.
+- [ ] The extraction dead-letter queue is empty (admin reference §6.3).
 - [ ] Sign in to the Judy interface and to the AWS console beforehand.
 - [ ] Check the alarm topic has Judy's addresses, or note it as a follow-up.

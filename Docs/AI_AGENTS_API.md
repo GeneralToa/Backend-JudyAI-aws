@@ -1,14 +1,12 @@
 # AI Agents API — contract
 
-**Status: implemented** (`Backend/lambdas/analysis_api/handler.py`, 2026-09-26) — all three
-routes verified locally against the environment's database with real HTTP API v2 events
-(`Backend/tests/test_analysis_api.py`, 11/11). Awaiting deployment (JAAPESWM-45). The three
-pre-signing agents already run automatically on upload; this API is how the interface reads
-their results and requests re-runs.
+**Status: live** (`Backend/lambdas/analysis_api/handler.py`). Deployed 2026-09-25; per-user
+access since 2026-10-01; deployed code identical to `main` on 2026-10-26. The three pre-signing
+agents run automatically on upload and the fourth on the last signature. This API is how the
+web application reads their results and requests re-runs.
 
-This is the interface between the AI workstream and the application. Lloyd builds the UI
-against this; Zuhair implements behind it. If something here is awkward for the frontend, say
-so now — it is cheaper to change this document than the implementation.
+This is the interface between the AI workstream and the application. Change this document and
+the implementation together.
 
 Covers the SOW "AI and Data Management" line item:
 *"API endpoints for triggering AI analysis and retrieving results for each agent capability."*
@@ -52,7 +50,7 @@ continuous polling — the app reads status when a page loads.
 
 ## 3. The happy path (no trigger call needed)
 
-Analysis starts **automatically on upload**. Lloyd does not have to call anything to kick it off.
+Analysis starts **automatically on upload**. The application does not have to call anything to start it.
 
 ```
 1. App uploads document          POST /upload              (existing route)
@@ -364,40 +362,36 @@ Workers are split from the API handler so that no HTTP request can hit the 29-se
 | `agent-summary` | Agent 3 | same |
 | `agent-obligation-tracking` | Agent 4 | signature completion event |
 
-### 7.1 Deployment spec per function (for IaC)
+### 7.1 Deployment spec per function
 
 Only `analysis-api` is behind API Gateway. Everything else is event-driven or invoked
 function-to-function, so it gets **no route**.
 
 | Function | Trigger | Timeout / memory | Environment variables | IAM beyond logs |
 |---|---|---|---|---|
-| `document-extraction` | Object created under `uploads/` in the landing-zone bucket. That prefix already feeds the ingestion queue, so it fans out: **S3 → SNS → a queue per consumer** (Andres, 2026-09-22). The handler unwraps the SNS envelope in the SQS body itself, and also accepts raw message delivery, a direct SNS subscription, or a bare S3 event, so either subscription setting works. | 300 s / 512 MB | `AURORA_CLUSTER_ARN`, `AURORA_SECRET_ARN` (**judy-ai-writer** secret, not the master), `AURORA_DATABASE=ragdb`, `BDA_PROJECT_ARN` = `arn:aws:bedrock:us-west-2:580118073904:data-automation-project/3582b7d2b55a`, `BDA_PROFILE_ARN` = `arn:aws:bedrock:us-west-2:580118073904:data-automation-profile/us.data-automation-v1`, `BDA_OUTPUT_BUCKET` = landing-zone bucket, `BDA_OUTPUT_PREFIX=bda-output`, `PRE_SIGNING_AGENT_ARNS` (comma-separated agent function ARNs), optional `MAX_WAIT_SECONDS` (default 240) | `bedrock:InvokeDataAutomationAsync`, `bedrock:GetDataAutomationStatus` (project, profile and the invocation ARN pattern); `s3:GetObject` on `uploads/*`, `s3:GetObject`/`s3:PutObject`/`s3:ListBucket` on `bda-output/*`; `rds-data:ExecuteStatement`; `secretsmanager:GetSecretValue` on the judy-ai secret; `lambda:InvokeFunction` on the three pre-signing agents |
+| `document-extraction` | Object created under `uploads/` in the landing-zone bucket. That prefix already feeds the ingestion queue, so it fans out: **S3 → SNS → a queue per consumer** (Andres, 2026-09-22). The handler unwraps the SNS envelope in the SQS body itself, and also accepts raw message delivery, a direct SNS subscription, or a bare S3 event, so either subscription setting works. | 300 s / 256 MB | `AURORA_CLUSTER_ARN`, `AURORA_SECRET_ARN` (**judy-ai-writer** secret, not the master), `AURORA_DATABASE=ragdb`, `BDA_PROJECT_ARN` = `arn:aws:bedrock:us-west-2:580118073904:data-automation-project/3582b7d2b55a`, `BDA_PROFILE_ARN` = `arn:aws:bedrock:us-west-2:580118073904:data-automation-profile/us.data-automation-v1`, `BDA_OUTPUT_BUCKET` = landing-zone bucket, `BDA_OUTPUT_PREFIX=bda-output`, `PRE_SIGNING_AGENT_ARNS` (comma-separated agent function ARNs), optional `MAX_WAIT_SECONDS` (default 240) | `bedrock:InvokeDataAutomationAsync`, `bedrock:GetDataAutomationStatus` (project, profile and the invocation ARN pattern); `s3:GetObject` on `uploads/*`, `s3:GetObject`/`s3:PutObject`/`s3:ListBucket` on `bda-output/*`; `rds-data:ExecuteStatement`; `secretsmanager:GetSecretValue` on the judy-ai secret; `lambda:InvokeFunction` on the three pre-signing agents |
 | `agent-risk-clause` | Async invoke from `document-extraction`, or from `analysis-api` on re-run. Payload `{"contract_id","extraction_id"}` | 300 s / 512 MB | `AURORA_*` (as above), `MODEL_ID=us.amazon.nova-pro-v1:0`, `PROMPT_VERSION` (optional). Packaged with `source_dir`, so the committed `playbook_rules.json` beside the handler ships with it (`build_rules.py` writes it; `test_playbook_rules_in_sync.py` checks it). Fallback: `RULES_BUCKET` + `RULES_KEY` to read it from S3. Optional `NOTIFY_FUNCTION_NAME=rag-app-prod-signature-workflow` turns on the risk-flagged email (async invoke on the automatic run when a finding is high severity) and then needs `lambda:InvokeFunction` on that function. | `bedrock:InvokeModel` **and** `bedrock:GetInferenceProfile` on the Nova Pro inference profile *and* the underlying foundation-model ARNs (both are checked); `rds-data:ExecuteStatement`; `secretsmanager:GetSecretValue` on the judy-ai secret |
 | `agent-template-prepopulation` | Same as above | 300 s / 512 MB | `AURORA_*`, `MODEL_ID`, `BDA_OUTPUT_BUCKET` (to read the extraction's `result.json` for line positions) | As risk agent, plus `s3:GetObject` on `bda-output/*` |
 | `agent-summary` | Same as above | 300 s / 512 MB | `AURORA_*`, `MODEL_ID` | As risk agent |
 | `agent-obligation-tracking` | Async invoke from the signature-workflow Lambda when the last signer confirms. Payload `{"contract_id","trigger":"signature_completed"}` (it finds the newest succeeded extraction itself); or from `analysis-api` with `extraction_id` + `run_id`. Refuses contracts whose `app.contracts.status` is not `signed`. Function name `rag-app-prod-agent-obligation-tracking`; the signature Lambda reads it from `OBLIGATION_AGENT_FUNCTION_NAME` and needs `lambda:InvokeFunction` on it. **Built 2026-09-26.** | 300 s / 512 MB | `AURORA_*`, `MODEL_ID`. Never set `ALLOW_UNSIGNED` in the deployed function. | As risk agent |
-| `analysis-api` | API Gateway, the three routes in §8 | 29 s / 256 MB | `AURORA_*` (judy-ai-writer secret), `RISK_AGENT_ARN`, `TEMPLATE_AGENT_ARN`, `SUMMARY_AGENT_ARN`, `OBLIGATION_AGENT_ARN` (leave unset until agent 4 exists; the API then answers 422 `AGENT_UNAVAILABLE` for it). Optional `IN_FLIGHT_WINDOW_SECONDS` (default 600), `BDA_OUTPUT_BUCKET` (defaults to the contract's upload bucket), `PAGE_IMAGE_URL_TTL` (default 900). | `rds-data:ExecuteStatement`; `secretsmanager:GetSecretValue` on the judy-ai secret; `lambda:InvokeFunction` on the four agents; **`s3:GetObject` on `arn:aws:s3:::rag-app-prod-landing-zone-580118073904-us-west-2-an/bda-output/*`** (page-image URLs are signed with this role; without it they return 403) |
+| `analysis-api` | API Gateway, the three routes in §8 | 29 s / 256 MB | `AURORA_*` (judy-ai-writer secret), `RISK_AGENT_ARN`, `TEMPLATE_AGENT_ARN`, `SUMMARY_AGENT_ARN`, `OBLIGATION_AGENT_ARN` (an agent whose ARN is unset gets 422 `AGENT_UNAVAILABLE`). Optional `IN_FLIGHT_WINDOW_SECONDS` (default 600), `BDA_OUTPUT_BUCKET` (defaults to the contract's upload bucket), `PAGE_IMAGE_URL_TTL` (default 900). | `rds-data:ExecuteStatement`; `secretsmanager:GetSecretValue` on the judy-ai secret; `lambda:InvokeFunction` on the four agents; **`s3:GetObject` on `arn:aws:s3:::rag-app-prod-landing-zone-580118073904-us-west-2-an/bda-output/*`** (page-image URLs are signed with this role; without it they return 403) |
 
 **Re-run payload.** On `POST` the API inserts a `pending` row in `agent_runs` per agent and
 invokes each agent with `{"contract_id", "extraction_id", "run_id", "trigger": "api_rerun"}`.
-The agents claim that row (`run_id`) instead of inserting their own — added to agents 1–3 on
-2026-09-26, so **they need redeploying from main** for re-run ids to line up. Until then a
-re-run still works; it just leaves the API's pending row behind, and the status route
-reports the agent's own newer row.
+The agents claim that row (`run_id`) instead of inserting their own, so a re-run is completed
+under the id the API returned.
 
 All of these run **outside the VPC** (Data API), like the four existing functions.
 
-**Where field coordinates come from (Andres, this affects IaC).** `document-extraction` must
+**Where field coordinates come from.** `document-extraction` must
 run BDA with the project `judy-ai-contract-extraction`
 (`arn:aws:bedrock:us-west-2:580118073904:data-automation-project/3582b7d2b55a`), not the
 public default. That project has bounding boxes enabled, so its `result.json` carries a
 normalized box for every printed line. `agent-template-prepopulation` reads that file back
 from the BDA output bucket (`BDA_OUTPUT_BUCKET` env var, `s3:GetObject` on the `bda-output/`
 prefix) and anchors each field to its label's box. With the public-default project the
-agent still runs, but every `position` is `null`. The project was created with the CLI
-(2026-09-22) and should move into Terraform if the provider supports
-`aws_bedrock_data_automation_project`; otherwise keep the ARN in SSM like the others.
-Its standard-output configuration, for reproduction:
+agent still runs, but every `position` is `null`. The project is managed in Terraform
+(`IaC/2_data/bedrock.tf`) and its ARN is in SSM. Its standard-output configuration:
 
 ```json
 {"document": {
@@ -410,49 +404,30 @@ Its standard-output configuration, for reproduction:
 
 ---
 
-## 8. Routes to add — drop-in for `IaC/7_apigateway/config/prod.yaml`
+## 8. Routes as deployed
 
-Andres — these follow the existing `lambdaFunctions` pattern exactly.
+The three routes are on the existing HTTP API `rag-app-prod-api`, behind its Cognito JWT
+authorizer, all served by `analysis-api`. They are defined in `IaC/7_apigateway/config/prod.yaml`.
 
-```yaml
-      analysisTriggerPost:
-        functionName: "analysis-api"
-        path: "/contracts/{contractId}/analysis"
-        method: "POST"
-        integrationMethod: "POST"
-        authRequired: true
-        timeoutMilliseconds: 29000
-      analysisStatusGet:
-        functionName: "analysis-api"
-        path: "/contracts/{contractId}/analysis"
-        method: "GET"
-        integrationMethod: "POST"
-        authRequired: true
-        timeoutMilliseconds: 29000
-      analysisResultsGet:
-        functionName: "analysis-api"
-        path: "/contracts/{contractId}/analysis/{agentType}"
-        method: "GET"
-        integrationMethod: "POST"
-        authRequired: true
-        timeoutMilliseconds: 29000
-```
+| Method | Path |
+|---|---|
+| `POST` | `/contracts/{contractId}/analysis` |
+| `GET` | `/contracts/{contractId}/analysis` |
+| `GET` | `/contracts/{contractId}/analysis/{agentType}` |
 
-`analysis-api` will also need `rds-data:ExecuteStatement`, `secretsmanager:GetSecretValue` for
-the Aurora secret, and `lambda:InvokeFunction` on the four agent workers. Following the existing
-SSM pattern (`/rag-app/kms/dynamodb-arn`), I'd suggest publishing the Aurora cluster ARN and
-secret ARN as SSM parameters from `2_data` so `6_lambda` can consume them.
+The Aurora cluster ARN and the AI secret ARN are published in SSM by `2_data` and read by
+`6_lambda`.
 
 ---
 
-## 9. Open items
+## 9. Decisions made while building
 
-| # | Item | Owner | Status |
-|---|---|---|---|
-| 1 | Contract types `sow` / `purchaseAgreement` / `msa` | Eean | ✅ Confirmed 2026-09-16 |
-| 2 | Who writes `app.contracts` on upload, and which fields the upload flow needs | Lloyd | Open |
-| 3 | `position` normalized vs absolute pixels | Lloyd | ✅ Normalized, confirmed 2026-09-18 |
-| 4 | How signature completion signals Agent 4 (event shape / source) | Lloyd + Zuhair | Open |
-| 5 | Postgres vs DynamoDB for AI results | Andres | ✅ Postgres — schema applied 2026-09-17 |
-| 6 | Whether these routes live on the existing `rag-app-prod-api` or a separate API | Andres | Open |
-| 7 | `dueDate` nullable with `rawDateText` fallback | Lloyd | ✅ Confirmed 2026-09-18 |
+| # | Item | Decision |
+|---|---|---|
+| 1 | Contract types | `sow` / `purchaseAgreement` / `msa`, confirmed by Eean 2026-09-16 |
+| 2 | Who writes `app.contracts` on upload | The application's `data-upload` function, at upload (2026-09-21) |
+| 3 | `position` units | Normalized 0–1, origin top-left (2026-09-18) |
+| 4 | How signature completion starts Agent 4 | `signature-workflow` invokes it asynchronously on the last signature with `{"contract_id", "trigger": "signature_completed"}` |
+| 5 | Where AI results live | Postgres, schema `judy_ai` (applied 2026-09-17) |
+| 6 | Which API serves these routes | The existing `rag-app-prod-api`, same Cognito authorizer |
+| 7 | `dueDate` | Nullable; `rawDateText` holds the document's own wording, shown when there is no date (2026-09-18) |
