@@ -23,7 +23,8 @@ Flow:
     1. Resolve the uploaded S3 object to a row in app.contracts
     2. Insert a judy_ai.document_extractions row (status 'running') immediately,
        recording the BDA invocation ARN before we wait on anything
-    3. Invoke Bedrock Data Automation asynchronously
+    3. Invoke Bedrock Data Automation asynchronously (on a renamed copy when the
+       file name has characters BDA refuses)
     4. Wait for BDA to finish, bounded by MAX_WAIT_SECONDS
     5. Read the BDA output from S3, normalize it to plain text
     6. Store the text and mark the extraction 'succeeded'
@@ -51,6 +52,7 @@ Why we wait inline instead of polling on a schedule:
 
 import json
 import os
+import re
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -88,6 +90,11 @@ POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "5"))
 
 # Documents of one batch processed at the same time. The SQS batch size is 10.
 MAX_PARALLEL_DOCUMENTS = int(os.environ.get("MAX_PARALLEL_DOCUMENTS", "10"))
+
+# Characters BDA refuses in an input S3 URI (its inputConfiguration.s3Uri
+# validation pattern). Uploaded file names can contain them, for example
+# "[Company][Vendor Agreement].docx", and BDA then rejects the job outright.
+BDA_REFUSED_CHARACTERS = re.compile(r'[\x00-\x1f\x7f{}^%`\[\]"<>~#|]')
 
 
 # =============================================================
@@ -201,6 +208,26 @@ def fail_extraction(extraction_id, error_message):
 # =============================================================
 # Bedrock Data Automation
 # =============================================================
+def bda_input_location(bucket, key, contract_id):
+    """
+    The S3 object BDA should read for this upload.
+
+    Normally the upload itself. If its key contains a character BDA refuses, a
+    copy with those characters replaced is written under the BDA output prefix
+    (never under uploads/, which would start the pipeline again) and BDA reads
+    the copy. The upload and the contract record keep the original name.
+    """
+    if not BDA_REFUSED_CHARACTERS.search(key):
+        return bucket, key
+    safe_name = BDA_REFUSED_CHARACTERS.sub("_", key.rsplit("/", 1)[-1])
+    safe_key = f"{BDA_OUTPUT_PREFIX}/input/{contract_id}/{safe_name}"
+    s3_client.copy_object(
+        Bucket=BDA_OUTPUT_BUCKET, Key=safe_key, CopySource={"Bucket": bucket, "Key": key}
+    )
+    print(f"File name has characters BDA refuses; extracting from s3://{BDA_OUTPUT_BUCKET}/{safe_key}")
+    return BDA_OUTPUT_BUCKET, safe_key
+
+
 def invoke_bda(bucket, key):
     """Start an asynchronous BDA job and return its invocation ARN."""
     output_prefix = f"s3://{BDA_OUTPUT_BUCKET}/{BDA_OUTPUT_PREFIX}"
@@ -407,7 +434,7 @@ def process_document(bucket, key):
             "the application must create the contract record at upload time"
         )
 
-    invocation_arn = invoke_bda(bucket, key)
+    invocation_arn = invoke_bda(*bda_input_location(bucket, key, contract_id))
     extraction_id = create_extraction(contract_id, invocation_arn)
     print(f"Extraction {extraction_id} created for contract {contract_id}")
 
