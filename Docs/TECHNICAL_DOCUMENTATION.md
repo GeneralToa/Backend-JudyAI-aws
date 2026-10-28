@@ -51,6 +51,7 @@
 | GET | `/contracts/{contractId}/signers` | `signature-workflow` | List signers for a contract |
 | POST | `/contracts/{contractId}/sign` | `signature-workflow` | Record a signature event |
 | POST | `/contracts/{contractId}/cancel-routing` | `signature-workflow` | Cancel routing |
+| GET | `/contracts/{contractId}/signed-copy` | `signature-workflow` | Download signed copy of a contract |
 | POST | `/contracts/{contractId}/analysis` | `analysis-api` | Trigger AI analysis |
 | GET | `/contracts/{contractId}/analysis` | `analysis-api` | Get all analysis results |
 | GET | `/contracts/{contractId}/analysis/{agentType}` | `analysis-api` | Get analysis by agent type |
@@ -72,12 +73,16 @@
 | agent_template_prepopulation | Python 3.13 | 300s | 512MB | AI agent — detects contract template type, pre-populates fields from BDA output |
 | agent_summary | Python 3.13 | 300s | 512MB | AI agent — generates contract summaries, writes to `judy_ai.*` |
 | agent_obligation_tracking | Python 3.13 | 300s | 512MB | AI agent — extracts and tracks contractual obligations |
-| signature_workflow | Python 3.13 | 30s | 128MB | Manages document routing for signature, triggers obligation agent on completion; sends SES emails |
+| signature_workflow | Python 3.13 | 120s | 1024MB | Manages document routing for signature, triggers obligation agent on completion; sends SES emails |
 | analysis_api | Python 3.13 | 29s | 256MB | API handler for contract analysis results; invokes agent functions |
 | admin_api | Python 3.13 | 29s | 256MB | Admin panel API — manages approval templates and system settings via `app.*` schema |
 
-**Lambda Layer** (retrieve_and_generate only):
-- Strands Agents SDK: `arn:aws:lambda:us-west-2:856699698935:layer:strands-agents-py3_13-x86_64:2`
+**Lambda Layers:**
+
+| Function | Layer | Source |
+|----------|-------|--------|
+| `retrieve_and_generate` | Strands Agents SDK | `arn:aws:lambda:us-west-2:856699698935:layer:strands-agents-py3_13-x86_64:2` (external ARN) |
+| `signature_workflow` | Local dependencies layer | Built from `Backend/lambdas/dependencies_layer/requirements.txt` by `null_resource.install_dependencies` at deploy time |
 
 ### Data Storage
 
@@ -263,7 +268,7 @@ Indexes: HNSW on `embedding`, GIN on `metadata`.
 | `app.signature_events` | Signature lifecycle events (sent, confirmed, completed, declined) linked to contracts |
 | `app.approval_templates` | Up to 3 admin-configured templates. Fields: `id` (UUID PK), `name`, `routing_type` (sequential\|parallel), `signer_roles` (JSONB ordered list), `is_default` (unique partial index). Seeded with one default sequential template (`["supplier","company"]`) |
 | `app.contract_signers` | One row per signer assigned to a contract. Fields: `id`, `contract_id` (FK), `template_id` (FK), `signer_email`, `signer_role`, `signer_order`, `status` (pending\|signed\|declined), `assigned_at`, `signed_at` |
-| `app.signer_signatures` | Actual signature data per signer. Fields: `id`, `contract_id` (FK), `signer_id` (FK), `signature_data` (base64 PNG), `field_id` (optional FK to `judy_ai.contract_fields` for page placement), `page`, `created_at` |
+| `app.signer_signatures` | Actual signature data per signer. Fields: `id`, `contract_id` (FK), `signer_id` (FK), `signature_data` (base64 PNG), `field_id` (optional FK to `judy_ai.contract_fields` for page placement), `page`, `full_name` (nullable), `title` (nullable), `created_at` |
 | `app.system_settings` | Key/value table for system-wide configuration (app_name, max_file_size_mb, notification flags, etc.) |
 
 ### `judy_ai` — AI-owned
@@ -302,6 +307,8 @@ Migration files in `IaC/2_data/scripts/`:
 | `002_risk_category_tracked_term.sql` | Risk category and tracked term tables |
 | `003_signature_workflow.sql` | Signature workflow tables and approval templates |
 | `004_app_system_settings.sql` | `app.system_settings` table |
+| `005_judy_ai_read_contract_signers.sql` | Grants `judy_ai_writer` SELECT on `app.contract_signers` so AI agents can read signer data |
+| `006_signer_signatures_name_title.sql` | Adds `full_name` and `title` (nullable TEXT) to `app.signer_signatures`; idempotent via `IF NOT EXISTS` |
 
 Triggers: `filemd5()` of each SQL file + `cluster_arn`. Migrations re-run automatically when either the SQL file or the Aurora cluster changes.
 
@@ -720,12 +727,23 @@ When that blocker is resolved, submit the request:
 2. Select **Service: SES** and **Quota name: Email sending**.
 3. Fill in the request form:
    - **Mail type**: Transactional
-   - **Website URL**: `<WEBSITE>`
+   - **Website URL**: `https://judy.ai`
    - **Use case description**: Contract management platform sending signature workflow notifications and system alerts to verified business users
    - **Region**: `us-east-1`
 4. Submit. Approval typically takes 24–48 hours.
 
 Until approved, the application can send emails only to addresses manually verified under **SES → Verified identities**.
+
+### Verifying Recipient Email Addresses for SES Sandbox Testing (one-time per address)
+
+While SES is in sandbox mode, every recipient address must be individually verified before the application can send to it. This applies to signature workflow emails and any test notifications.
+
+1. Go to **SES → Verified identities → Create identity**.
+2. Select **Email address**, enter the recipient address, and click **Create identity**.
+3. AWS sends a verification email to that address. The recipient must click the confirmation link.
+4. Once confirmed, the identity shows **Verified** status and can receive SES emails from this account.
+
+Repeat for each address that needs to receive emails during testing. This step is not needed once SES production access is approved.
 
 ---
 
