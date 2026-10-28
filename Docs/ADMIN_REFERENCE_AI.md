@@ -5,7 +5,7 @@
 | Scope | The AI workstream of the SOW: document text extraction, the four AI agents, the AI data model and the AI API |
 | Audience | Administrators who deploy, configure and operate the Judy AI environment |
 | Environment | AWS account `580118073904`, region `us-west-2`, resource prefix `rag-app-prod` |
-| Version | 1.7, 26 October 2026. Values checked against the live environment on 26 October. 1.1: extraction batch handling and rules packaging fixed. 1.2: per-user access on the AI API. 1.3: all three live; DLQ retention 14 days. 1.4: client-confirmed playbook corrections; risk-flagged email trigger. 1.5: CloudWatch alarms in place. 1.6: sixteen playbook typing errors corrected; field placement and blank-check limits. 1.7: re-checked live; signed copy and field boxes (6.8); file names BDA refuses are extracted from a renamed copy; log retention. |
+| Version | 1.7, 26 October 2026. Values checked against the live environment on 26 October. 1.1: extraction batch handling and rules packaging fixed. 1.2: per-user access on the AI API. 1.3: all three live; DLQ retention 14 days. 1.4: client-confirmed playbook corrections; risk-flagged email trigger. 1.5: CloudWatch alarms in place. 1.6: sixteen playbook typing errors corrected; field placement and blank-check limits. 1.7: re-checked live; signed copy and field boxes (6.8); file names BDA refuses are extracted from a renamed copy (deployed 26 October); 30-day log retention (26 October). |
 | Related | Infrastructure and application chapters of this reference; the API contract in [`AI_AGENTS_API.md`](AI_AGENTS_API.md) |
 
 This chapter is part of the single administrator reference document the SOW requires
@@ -59,8 +59,8 @@ come from the page layout BDA measured, never from the model; dates are never ca
 ### 2.1 Lambda functions
 
 All functions: Python 3.13, no VPC (database access is through the RDS Data API), one IAM role
-each, log group `/aws/lambda/<function name>`. These log groups have no retention period set, so
-logs are kept until deleted (section 9).
+each, log group `/aws/lambda/<function name>` with 30-day retention (managed in Terraform since
+26 October 2026).
 
 | Function | Trigger | Memory | Timeout | Role |
 |---|---|---|---|---|
@@ -410,7 +410,7 @@ account.
 | Playbook rules packaging | **Fixed 1 Oct 2026:** the agent's copy is committed, written by `build_rules.py` with the source, and checked by `test_playbook_rules_in_sync.py` | — | AI (done) |
 | Bedrock permission scope | Agent roles may invoke any Bedrock model | **Kept open by decision (2 Oct 2026):** Judy may switch to another model, so the permission is not tied to Nova Pro. Changing models is then a `MODEL_ID` change only (section 6.5). | — |
 | Alarms | **Done 2 Oct 2026:** errors, duration and throttles on all six AI functions and DLQ depth, emailing the team (SNS `rag-app-prod-alarms`) | At handover, replace the team emails with Judy's own | Infrastructure |
-| Log retention | The function log groups keep logs indefinitely. Terraform's 30-day groups (`IaC/6_lambda/cloudwatch.tf`) are named without the `rag-app-prod-` prefix, so they stay empty. | Name them `/aws/lambda/rag-app-prod-<function>` and import the existing groups, or set retention on them directly | Infrastructure |
+| Log retention | **Fixed 26 Oct 2026:** Terraform (`IaC/6_lambda/cloudwatch.tf`) now manages the real `/aws/lambda/rag-app-prod-<function>` groups with 30-day retention. Until then they kept logs indefinitely. | — | Infrastructure (done) |
 | Model quotas | Not load-tested | Bedrock request and token quotas for Nova Pro are the real ceiling under load; check them in Service Quotas before a large batch | Infrastructure |
 
 ---
